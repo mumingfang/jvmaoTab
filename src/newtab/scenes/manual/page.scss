@@ -1,0 +1,125 @@
+.storybook-page {
+    .manual {
+        box-sizing: border-box;
+        padding: 40px;
+        font-family: var(--sn-font-hei);
+    }
+
+    .manual-l {
+        height: 100%;
+        display: flex;
+        align-items: flex-end;
+
+        &.manual-4-l {
+            flex-direction: column;
+            gap: 20px;
+            align-items: center;
+
+            .err_wrap {
+                padding: 5px;
+                border: 1px solid var(--fff);
+                border-radius: 10px;
+                margin-top: 60px;
+                position: relative;
+
+                .tooltip {
+                    position: absolute;
+                    bottom: 7px;
+                    right: 108px;
+                    font-size: 10px;
+                    color: #afafaf;
+
+                    svg {
+                        transform: rotate(331deg);
+                    }
+                }
+
+                img {
+                    border-radius: 5px;
+                    width: 420px;
+                }
+            }
+
+            .other {
+                position: absolute;
+                left: 40px;
+                bottom: 40px;
+            }
+        }
+
+        h4 {
+            margin: 0 0 5px;
+            font-weight: 300;
+            font-weight: 300;
+        }
+
+        p {
+            margin: 0;
+            font-size: 12px;
+            font-weight: 300;
+            color: #999;
+        }
+    }
+
+
+    .manual-1 {
+        position: relative;
+        height: 100%;
+
+        h2 {
+            color: #444;
+            font-size: 32px;
+            font-weight: 300;
+        }
+
+        .tooltip {
+            position: absolute;
+            right: 30px;
+            bottom: 100px;
+            color: #aaa;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+        }
+    }
+
+    .manual-2 {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+    }
+
+    .manual-2-l {
+        flex-direction: column;
+        justify-content: flex-end;
+        align-items: flex-start;
+    }
+
+    .manual-3 {
+        height: 100%;
+    }
+
+    .manual-4 {
+        height: 100%;
+        display: flex;
+        height: 100%;
+        position: relative;
+
+        h1 {
+            font-size: 40px;
+            font-weight: 900;
+            position: absolute;
+            right: 30px;
+            bottom: 30px;
+        }
+
+        .afdian {
+            width: 100%;
+            h4 {
+                margin: 0 0 10px;
+            }
+
+        }
+    }
+}

@@ -1,0 +1,375 @@
+$page-radius: 10px;
+
+.storybook {
+    width: var(--storybook-modal-width);
+    position: relative;
+    height: calc(var(--storybook-modal-width) / 2 * 1.33);
+    max-height: calc(100vh - 32px);
+    box-sizing: border-box;
+    margin-top: calc(0px - var(--hd-height) - 46px);
+    margin-left: auto;
+    margin-right: auto;
+
+    .pages:not(.open)+.storybook-tools-wrap {
+        top: calc(10px + var(--hd-height) + 46px);
+        box-shadow: 0 0 20px -10px rgba(0, 0, 0, 0.5);
+    }
+}
+
+.pages {
+    --pages-position-num: 15px;
+    position: absolute;
+    top: var(--pages-position-num);
+    left: var(--pages-position-num);
+    right: var(--pages-position-num);
+    bottom: var(--pages-position-num);
+    z-index: 985;
+    padding: 0;
+    margin: 0;
+
+    &.in-modal {
+        --pages-position-num: 0px;
+    }
+
+    &.open {
+        .paper {
+            .page {
+                border-radius: 0 $page-radius $page-radius 0;
+            }
+
+            .page-back {
+                border-radius: $page-radius 0 0 $page-radius;
+            }
+        }
+
+        .storybook-page-prevHotZone,
+        .storybook-page-nextHotZone {
+            pointer-events: auto;
+        }
+    }
+
+    &.init {
+        .paper {
+            &:last-child {
+                // opacity: 1;
+            }
+        }
+    }
+
+    .paper {
+        // overflow: hidden;
+        position: absolute;
+        width: 50%;
+        height: 100%;
+        top: 0;
+        transform-style: preserve-3d;
+        transform-origin: left center;
+        right: 0;
+        transition: transform 0.5s ease-in-out;
+        z-index: 0;
+
+        &.loading {
+            z-index: 100 !important;
+        }
+
+        &.paper-n-0 {
+            .page-front {
+                &::after {
+                    width: 0;
+                }
+            }
+        }
+
+        &:last-child {
+            // opacity: 0;
+        }
+
+        &:not(.open) {
+            .page {
+                border-left: none;
+            }
+        }
+
+        &.open {
+            .page {
+                border-right: none;
+            }
+        }
+
+        .page {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            background-color: var(--fff);
+            background-image: url("~/assets/book_bg.jpg");
+            background-size: 100%;
+            //   z-index: 2;
+            box-sizing: border-box;
+            border: 1px solid #1b003f;
+            border-radius: 0 $page-radius $page-radius 0;
+            overflow: hidden;
+        }
+
+        .page-front {
+            &::after {
+                content: "";
+                width: 3%;
+                height: 100%;
+                position: absolute;
+                top: 0;
+                left: 0;
+                z-index: 2;
+                // background-color: #9cf;
+                background-image: url("~/assets/fold-shadow-right.png");
+                opacity: 0.1;
+                pointer-events: none;
+                background-size: contain;
+            }
+        }
+
+        .page-back {
+            transform: scale(-1, 1);
+            z-index: 1;
+            border-radius: $page-radius 0 0 $page-radius;
+
+            &::after {
+                content: "";
+                width: 3%;
+                height: 100%;
+                position: absolute;
+                top: 0;
+                right: 0;
+                z-index: 2;
+                // background-color: #9cf;
+                background-image: url("~/assets/fold-shadow-left.png");
+                opacity: 0.2;
+                pointer-events: none;
+                background-size: contain;
+            }
+        }
+    }
+
+    .open {
+        transform-origin: left center;
+        animation: flip-to-left 2s ease-in-out;
+    }
+
+    .page-front {
+        transform: translateZ(1px);
+    }
+}
+
+.storybook-page-prevHotZone,
+.storybook-page-nextHotZone {
+    position: absolute;
+    width: 15%;
+    height: 100%;
+    right: 0;
+    top: 0;
+    z-index: 100;
+    cursor: pointer;
+    pointer-events: none;
+}
+
+.storybook-page-prevHotZone {
+    left: 0;
+    right: auto;
+}
+
+.storybook-page-nextHotZone-end {
+    width: 50px;
+}
+
+.storybook-page {
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    position: relative;
+    box-sizing: border-box;
+
+    .more-box {
+        h4 {
+            font-size: 28px;
+            margin: 0 0 40px;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .story-more-wrap {
+            width: 560px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        p {
+            font-style: 24px;
+            font-weight: 700;
+            margin: 30px 0 0;
+        }
+    }
+}
+
+.storybook-cover {
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+    position: relative;
+    cursor: pointer;
+    // background-image: linear-gradient(to top right, #222120, #838382);
+    background-image: linear-gradient(to top right, #FFAF45, #fdc780);
+
+    .icon {
+        position: absolute;
+        right: 18px;
+        bottom: 30px;
+        transform: rotate(352deg);
+        color: var(--fff);
+        opacity: 0.5;
+    }
+
+    &::after {
+        content: "";
+        // width: 3%;
+        // height: 100%;
+        // position: absolute;
+        // background-image: linear-gradient(
+        //   to left,
+        //   rgba(0, 0, 0, 0) 0%,
+        //   rgba(0, 0, 0, 0.7) 100%
+        // );
+        // top: 0;
+        // left: 0;
+        // opacity: 0.6;
+        // pointer-events: none;
+        // background-size: contain;
+    }
+
+    &::before {
+        content: "";
+        width: 7px;
+        height: 100%;
+        position: absolute;
+        // background-color: #000;
+        background-image: linear-gradient(to right,
+                rgba(0, 0, 0, 0) 0%,
+                rgba(0, 0, 0, 0.6) 100%);
+        top: 0;
+        left: 2%;
+        opacity: 0.6;
+        pointer-events: none;
+        background-size: contain;
+    }
+}
+
+.storybook-cover-title {
+    width: 80%;
+    position: absolute;
+    top: 20%;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+    font-size: 46px;
+    font-family: var(--font-family-extra-bold);
+    font-weight: 800;
+    color: var(--fff);
+    line-height: 1.2;
+
+    >button {
+        position: absolute;
+        opacity: 0;
+        top: 0;
+        right: 0;
+        transform: translate(60%, -80%);
+        transition: all 0.3s;
+
+        &.musicBtn-play {
+            opacity: 1;
+        }
+    }
+
+    &:hover {
+        >button {
+            opacity: 1;
+        }
+    }
+}
+
+.storybook-cover-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+}
+
+.storybook-page-number {
+    position: absolute;
+    right: 40px;
+    bottom: 38px;
+    font-size: 14px;
+    color: #666;
+}
+
+.pages-error {
+    max-width: 400px;
+    background-color: var(--fff);
+    border-radius: 30px;
+    margin-top: 120px;
+    // border: 2px solid #1b003f;
+}
+
+
+
+.Manual-modal {
+    .ant-modal-content {
+        height: 90vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .ant-modal-body {
+        width: 100%;
+        height: 100%;
+        max-width: 1100px;
+        max-height: 650px;
+        position: relative;
+    }
+
+    .ant-modal {
+        .ant-modal-content {
+            background: none;
+            box-shadow: none;
+        }
+    }
+}
+
+.pages.dark {
+    .storybook-cover {
+        background-image: linear-gradient(to top right, #281c0c, #66400e);
+    }
+
+    .paper {
+        .page {
+            background-image: url("~/assets/book_bg_dark.jpg");
+        }
+    }
+
+    .storybook-page {
+        .manual-1 {
+            h2 {
+                color: #ccc;
+            }
+        }
+
+        .manual-l.manual-4-l .err_wrap img {
+            opacity: 0.4;
+        }
+
+        .manual-4 .afdian iframe {
+            opacity: 0.4;
+        }
+    }
+}

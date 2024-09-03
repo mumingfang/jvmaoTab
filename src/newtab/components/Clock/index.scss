@@ -1,0 +1,35 @@
+.homeClock {
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-shadow: 0 1px 5px rgb(0 0 0 / 41%), 0px 8px 4px rgb(50 50 50 / 11%);
+    gap: 5px;
+    time {
+        font-size: 65px;
+        line-height: 1;
+    }
+
+    .date {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        font-size: 14px;
+    }
+
+    &.isSoBarDown {
+        display: flex;
+        gap: 10px;
+        flex-direction: row;
+        time {
+            font-size: 18px;
+        }
+    }
+}
+.isDark {
+    .homeClock {
+        color: #727272;
+    }
+}

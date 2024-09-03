@@ -1,0 +1,123 @@
+.sn-small-editor {
+    $gridHeight: 28px;
+    &:hover {
+        .sn-small-editor-menuBar {
+            opacity: 1;
+        }
+    }
+    .ProseMirror {
+        outline: none;
+        padding: 0;
+        min-height: 200px;
+        max-height: 70vh;
+        overflow-y: auto;
+        background-size: $gridHeight $gridHeight;
+        background-position: center -1px;
+        background-image: linear-gradient(var(--notebrColor) 1px, transparent 1px);
+
+        color: var(--colorText);
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6,
+        pre,
+        p {
+            margin: 0px;
+            line-height: $gridHeight;
+            background-size: $gridHeight $gridHeight;
+            background-position: center -1px;
+            background-image: linear-gradient(var(--notebrColor) 1px, transparent 1px);
+            background-color: var(--fff);
+            background-position: center -1px;
+            padding: 0 20px;
+            font-size: 14px;
+        }
+
+        hr {
+            margin: 24px 0;
+        }
+
+        figure,
+        div,
+        ul,
+        ol {
+            margin: 0;
+            background-size: $gridHeight $gridHeight;
+            background-position: center -1px;
+            background-image: linear-gradient(var(--notebrColor) 1px, transparent 1px);
+            background-color: var(--fff);
+            padding-left: 40px;
+            padding-right: 20px;
+
+            h1,
+            h2,
+            h3,
+            h4,
+            h5,
+            h6,
+            p {
+                padding: 0;
+            }
+        }
+
+        img {
+            border-radius: 4px;
+            border: 1px solid var(--borderColor);
+            padding: 4px;
+            background-color: #fafafa;
+        }
+
+        figure {
+            display: flex;
+            align-items: center;
+            padding-left: 40px;
+        }
+
+        ul[data-type="taskList"] {
+            list-style: none;
+            padding-left: 16px;
+            >li {
+                position: relative;
+
+                &[data-checked="true"] {
+                    text-decoration: line-through;
+                }
+
+                >label {
+                    position: absolute;
+                    left: 0;
+                    top: 14px;
+                    transform: translateY(-50%);
+                }
+
+                >div {
+                    padding: 0;
+                    padding-left: 24px;
+                }
+            }
+        }
+    }
+}
+
+.sn-small-editor-menuBar {
+    display: flex;
+    box-sizing: border-box;
+    // border-bottom: 1px solid var(--notebrColor);
+    padding-left: 13px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    width: 65px;
+}
+
+.isDark {
+    .sn-small-editor {
+      .ProseMirror {
+        img {
+          background-color: #4e4e4e;
+        }
+      }
+    }
+  }

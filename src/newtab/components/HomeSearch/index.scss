@@ -1,0 +1,10 @@
+.so {
+  width: 100%;
+}
+.search-wrap {
+  display: flex;
+  align-items: center;
+  .search-input {
+    flex: 1;
+  }
+}
