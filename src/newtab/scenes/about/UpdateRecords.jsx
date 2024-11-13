@@ -25,6 +25,12 @@ const UpdateRecords = () => {
             <h2>更新日志</h2>
             <ul className="scroll-container">
                 <li>
+                    <span>1.2.6</span>
+                    <ul>
+                        <li>优化: 搜索框为圆角时首页图标也改为圆角</li>
+                    </ul>
+                </li>
+                <li>
                     <span>1.2.5</span>
                     <ul>
                         <li>修复: 搜索引擎设置排序问题</li>

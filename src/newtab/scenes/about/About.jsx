@@ -92,6 +92,7 @@ const About = () => {
             <FooterWrap>
                 <a href="https://jvmao.net" target="_blank" rel="noopener noreferrer">官方网站</a>
                 <a href="https://space.bilibili.com/3546388988168879" target="_blank" rel="noopener noreferrer">哔哩哔哩</a>
+                <a href="https://github.com/mumingfang/jvmaoTab" target="_blank" rel="noopener noreferrer">Github</a>
                 <span onClick={() => onCopy('429303318')}>QQ群: 429303318</span>
             </FooterWrap>
 

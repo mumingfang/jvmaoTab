@@ -12,7 +12,7 @@ const FavIconIcon = (props) => {
       const _u = new URL(u);
       const url = new URL(window.chrome.runtime.getURL("/_favicon/"));
       url.searchParams.set("pageUrl", onlyDomain ? _u.origin : u);
-      url.searchParams.set("size", size);
+      url.searchParams.set("size", size * 2);
       return url.toString();
     } catch (error) {
       console.log('%c [ error - u ]-9', 'font-size:13px; background:pink; color:#bf2c9f;', u)

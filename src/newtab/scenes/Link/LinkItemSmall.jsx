@@ -13,7 +13,7 @@ const Wrap = styled(motion.div)`
     align-items: center;
     justify-content: center;
     background-color: var(--fff);
-    border-radius: 18px;
+    border-radius: ${(props) => (props.isRound ? "30px" : "18px")};
     cursor: pointer;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     position: relative;
@@ -24,6 +24,9 @@ const Wrap = styled(motion.div)`
         right: 0;
         bottom: 0;
         z-index: 10;
+    }
+    > img {
+        border-radius: ${(props) => (props.isRound ? "30px" : "0")};
     }
 `;
 
@@ -50,14 +53,14 @@ const LinkItemSmall = (props) => {
     const item = useCreation(() => {
         return (
             <Tooltip title={props.title} placement={isSoBarDown ? "top" : "bottom"}>
-                <Wrap initial="hidden" animate="show" exit="hidden" variants={animations}>
+                <Wrap initial="hidden" animate="show" exit="hidden" variants={animations} isRound={option.item?.soStyleIsRound}>
                     <FavIconIcon size={28} url={props.url} />
                     <a className="link-a" href={props.url} target={linkOpenSelf ? '_blank' : '_self'} ></a>
                 </Wrap>
             </Tooltip>
 
         );
-    }, [props.title, props.url, linkOpenSelf]);
+    }, [props.title, props.url, linkOpenSelf, option.item?.soStyleIsRound]);
 
     return item;
 };
