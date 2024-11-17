@@ -25,6 +25,14 @@ const UpdateRecords = () => {
             <h2>更新日志</h2>
             <ul className="scroll-container">
                 <li>
+                    <span>1.2.7</span>
+                    <ul>
+                        <li>修复: 快捷搜索跳转icon不显示问题</li>
+                        <li>修复: 搜索下拉框位置问题</li>
+                        <li>修复: 搜索特定字符不生效问题</li>
+                    </ul>
+                </li>
+                <li>
                     <span>1.2.6</span>
                     <ul>
                         <li>优化: 搜索框为圆角时首页图标也改为圆角</li>

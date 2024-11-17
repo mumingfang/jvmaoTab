@@ -1,7 +1,7 @@
 const manifest = {
   manifest_version: 3,
   name: "橘猫起始页",
-  version: "1.2.6",
+  version: "1.2.7",
   description: "起始页还可以是这样的",
   homepage_url: "https://www.jvmao.net",
   icons: {
@@ -18,7 +18,7 @@ const manifest = {
     resources: ["_favicon/*"],
     matches: ["<all_urls>"],
     extension_ids: ["*"],
-  }, ],
+  }],
   background: {
     service_worker: "src/background/main.js",
     browser_action: {}
@@ -27,8 +27,12 @@ const manifest = {
     matches: ["<all_urls>"],
     js: ["src/content/index.html"],
     css: [],
-    run_at: "document_start",
+    run_at: "document_end",
   }, ],
+  content_security_policy: {
+    "extension_pages": "script-src 'self'; object-src 'self';",
+    "sandbox": "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval'; child-src 'self';"
+  }
 };
 
 export default manifest;

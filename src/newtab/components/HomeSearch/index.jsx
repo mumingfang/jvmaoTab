@@ -20,6 +20,7 @@ import _ from "lodash";
 
 const AutoCompleteWrap = styled(AutoComplete)`
   width: 584px;
+  --ant-control-height: 48px;
 `;
 const SearchWrap = styled.div`
   background: var(--fff);
@@ -84,6 +85,7 @@ const HomeSearch = (props) => {
 
   const goToSearch = (search) => {
     s.canGoto = false;
+    // let search = encodeURIComponent(s);
     if (!search) return;
     if (typeof search === "string") {
       const soList = [...customkey, ...SoIcon];
@@ -91,9 +93,9 @@ const HomeSearch = (props) => {
       if (url) {
         state.value = "";
         if (linkOpenSelf) {
-          window.location.href = `${url}${search}`;
+          window.location.href = `${url}${encodeURIComponent(search)}`;
         } else {
-          window.open(`${url}${search}`);
+          window.open(`${url}${encodeURIComponent(search)}`);
         }
       }
     } else if (search.url) {
@@ -229,6 +231,7 @@ const HomeSearch = (props) => {
   return (
     <AutoCompleteWrap
       className="head-search"
+      variant="borderless"
       value={""}
       options={state.options}
       open={state.open}
@@ -239,7 +242,9 @@ const HomeSearch = (props) => {
           state.open = true;
         }
       }}
-      onBlur={() => (state.open = false)}
+      onBlur={() => {
+        // state.open = false
+      }}
       popupClassName={"search-panel"}
       defaultActiveFirstOption={false}
       backfill={true}

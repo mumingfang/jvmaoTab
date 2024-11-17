@@ -130,15 +130,16 @@ const HomeLinkNav = styled.div`
   gap: 15px 15px;
   padding: 15px;
   border-radius: 12px;
-  transition: border-color 0.3s, background-color 0.3s;
+  transition: border-color 0.3s, background-color 0.3s, backdrop-filter 0.3s;
   border: 1px solid rgba(0, 0, 0, 0);
   -webkit-user-select: none;
   -moz-user-select: none; 
   -ms-user-select: none; 
   user-select: none; 
   &:hover {
-    background-color: rgba(0, 0, 0, 0.18);
-    border-color: rgba(0, 0, 0, 0.2);
+    background-color: var(--homeNavBg);
+    border-color: var(--homeNavBorderColor);
+    backdrop-filter: saturate(180%) blur(20px);
   }
 `;
 const clockAnimations = {

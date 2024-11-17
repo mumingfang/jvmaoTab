@@ -1,7 +1,11 @@
-import { defineConfig } from "vite";
+import {
+  defineConfig
+} from "vite";
 import path from "path";
 import webExtension from "@samrum/vite-plugin-web-extension";
-import { optimizeLodashImports } from "@optimize-lodash/rollup-plugin";
+import {
+  optimizeLodashImports
+} from "@optimize-lodash/rollup-plugin";
 // import nodePolyfills from "rollup-plugin-polyfill-node";
 import react from "@vitejs/plugin-react-swc";
 import manifest from "./src/manifest";
@@ -17,7 +21,15 @@ export default defineConfig({
       manifest: {
         ...manifest,
       },
-      // useDynamicUrlWebAccessibleResources: false,
+      additionalInputs: {
+        scripts: [
+          {
+            fileName: 'src/content/index.html',
+            webAccessible: true,
+          },
+        ],
+      },
+      useDynamicUrlWebAccessibleResources: false,
       // optimizeWebAccessibleResources: false,
       // devHtmlTransform: true,
     }),
@@ -44,15 +56,15 @@ export default defineConfig({
   },
   build: {
     outDir: "./dist",
-    assetsInlineLimit: 4096,
-    chunkSizeWarningLimit: 2000,
+    // assetsInlineLimit: 4096,
+    // chunkSizeWarningLimit: 2000,
     emptyOutDir: true,
-    cssCodeSplit: false,
+    // cssCodeSplit: false,
     sourcemap: false,
     // minify: "terser",
     rollupOptions: {
       input: {
-        // main: resolve(__dirname, "./src/index.html"),
+        content: 'src/content/index.html',
         // options: resolve(__dirname, "./src/options.html"),
       },
       output: {

@@ -16,7 +16,11 @@ export default () => {
                 </DelayedMount>
             }
         >
-            <HashRouter>
+            <HashRouter
+                future={{
+                    v7_startTransition: true,
+                }}
+            >
                 <Routes>
                     <Route path="/" element={<Home />}>
                         <Route index element={<LinkHome />} />

@@ -27,6 +27,8 @@ const Wrap = createGlobalStyle`
   --searcBoxShadow: ${(props) => props.color.searcBoxShadow};
   --homeImgOpacity: ${(props) => props.color.homeImgOpacity};
   --homeLogoOpacity: ${(props) => props.color.homeLogoOpacity};
+  --homeNavBg: ${(props) => props.color.homeNavBg};
+  --homeNavBorderColor: ${(props) => props.color.homeNavBorderColor};
   --linkitemGhostBg: ${(props) => props.color.linkitemGhostBg};
   --notebrColor: ${(props) => props.color.notebrColor};
   --notebrBoxShadow: ${(props) => props.color.notebrBoxShadow};
@@ -92,6 +94,8 @@ const Tower = ({ children }) => {
       t.notebrBoxShadow = "rgb(20, 20, 20)";
       t.notebrHomeHeaderBg = "#181818";
       t.homeLogoOpacity = "0.75";
+      t.homeNavBg = 'rgba(0, 0, 0, 0.18)';
+      t.homeNavBorderColor = 'rgba(0, 0, 0, 0.2)';
 
     } else {
       t.bgColor = token.colorBgLayout;
@@ -106,6 +110,8 @@ const Tower = ({ children }) => {
       t.notebrBoxShadow = "rgb(233, 233, 233)";
       t.notebrHomeHeaderBg = "#f5f5f5";
       t.homeLogoOpacity = "1";
+      t.homeNavBg = 'rgba(255, 255, 255, 0.18)';
+      t.homeNavBorderColor = 'rgba(255, 255, 255, 0.2)';
     }
     return t;
   }, [systemTheme, homeImgOpacity]);
