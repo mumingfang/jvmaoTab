@@ -17,7 +17,7 @@ const PreferencesBG = () => {
     const { bgType, bgUrl, bgBase64, bg2Type, bg2Url, bg2Base64, bgColor } = option.item;
 
     const handleChange = (value) => {
-        // console.log('%c [ value ]-21', 'font-size:13px; background:pink; color:#bf2c9f;', value)
+        console.log('%c [ value ]-21', 'font-size:13px; background:pink; color:#bf2c9f;', value)
         for (const key in value) {
             if (Object.hasOwnProperty.call(value, key)) {
                 let v = value[key];
@@ -76,7 +76,6 @@ const PreferencesBG = () => {
                     <UploadImg />
                 </Form.Item>
             )}
-
             {bgType === 'color' && (
                 <Form.Item label="纯色" name='bgColor'>
                     <ColorSelect />

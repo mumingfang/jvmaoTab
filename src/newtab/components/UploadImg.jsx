@@ -61,19 +61,19 @@ const UploadImg = (props) => {
             return;
         }
         if (info.file.status === 'done') {
-            // getBase64(info.file.originFileObj, (url) => {
-            //     // setLoading(false);
-            //     setImageUrl(url);
-            // });
+            getBase64(info.file.originFileObj, (e) => {
+                setImageUrl(e);
+                // console.log('%c XJ - [ e ]-77-「UploadImg.jsx」', 'font-size:13px; background:#f8f53d; color:#000;', e);
+            });
 
-            var reader = new FileReader();
-            reader.onload = function (e) {
-                var blob = new Blob([e.target.result], { type: info.file.type });
-                setImageUrl(blob);
-            };
-            reader.readAsArrayBuffer(info.file.originFileObj);
         }
     };
+
+    const showImgUrl = React.useMemo(() => {
+        return typeof imageUrl === 'string' ? imageUrl : imageUrl ? URL?.createObjectURL(imageUrl) : '';
+    }, [imageUrl]);
+
+
     return (
         <Wrap
             name="bg"
@@ -86,7 +86,7 @@ const UploadImg = (props) => {
             {imageUrl ? (
                 <img
                     className="bgImg"
-                    src={typeof imageUrl === 'string' || !imageUrl ? imageUrl : URL?.createObjectURL(imageUrl)}
+                    src={showImgUrl}
                     alt="bg"
                 />
             ) : (

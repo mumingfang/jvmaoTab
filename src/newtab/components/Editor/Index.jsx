@@ -30,6 +30,9 @@ export default (props) => {
     onUpdate: ({ editor }) => {
       debouncedRun(editor);
     },
+    enableCoreExtensions: {
+      tabindex: false
+    }
   });
 
   const { run: debouncedRun } = useDebounceFn((content) => {
@@ -38,11 +41,13 @@ export default (props) => {
 
   React.useEffect(() => {
     if (editor) {
+      console.log('%c XJ - [ editor ]-44-「Index.jsx」', 'font-size:13px; background:#f8f53d; color:#000;', editor);
       editor.commands.setContent(content);
     }
   }, [content, editor]);
 
   React.useEffect(() => {
+    
     return () => {
       if (editor) {
         editor.destroy()
@@ -51,7 +56,7 @@ export default (props) => {
   }, [editor])
 
   return (
-    <div className={"sn-editor"}>
+    <div className={"sn-editor"} >
       {editor && <MenuBar editor={editor} />}
       <EditorContent
         editor={editor}

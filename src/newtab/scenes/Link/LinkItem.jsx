@@ -109,7 +109,7 @@ const LinkItem = (props) => {
             {props.title}
           </Text>
         </div>
-        {!small && props.url ? (<a className="link-a" href={props.url} target={linkOpenSelf ? '_blank' : '_self'} ></a>) : null}
+        {!small && props.url ? (<a className="link-a" tabindex="-1" href={props.url} target={linkOpenSelf ? '_blank' : '_self'} ></a>) : null}
 
       </Card>
     );

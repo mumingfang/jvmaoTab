@@ -164,12 +164,12 @@ export default class HomeStores {
   getImgToCache = (type) => {
     return new Promise((resolve, reject) => {
       this.rootStore.option.getOption(type).then((blob) => {
-        console.log('%c [ blob ]-167', 'font-size:13px; background:pink; color:#bf2c9f;', blob instanceof Blob)
+        // console.log('%c [ blob ]-167', 'font-size:13px; background:pink; color:#bf2c9f;', blob instanceof Blob)
         if (typeof blob === 'string') {
           blob = base64ToBlob(blob);
         } 
         var url = URL.createObjectURL(blob)
-        console.log('%c [ url ]-174', 'font-size:13px; background:pink; color:#bf2c9f;', url)
+        // console.log('%c [ url ]-174', 'font-size:13px; background:pink; color:#bf2c9f;', url)
         resolve(url);
       });
     });

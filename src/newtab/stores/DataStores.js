@@ -105,7 +105,7 @@ export default class DataStores {
     } = this.rootStore.option.item;
 
     this.readFile(this.dir + devVName).then((data) => {
-      
+
       if (!data) {
         this.push();
         return;
@@ -114,7 +114,7 @@ export default class DataStores {
       const yunNyum = parseInt(data);
       const num = webdavVersion;
       // 判断这两个值是否是NaN
-      if (isNaN(yunNyum) || isNaN(num)) { 
+      if (isNaN(yunNyum) || isNaN(num)) {
         this.rootStore.tools.error(`同步拉取异常: 未知错误`);
         return;
       }
@@ -139,7 +139,7 @@ export default class DataStores {
 
   _pull = async (webdavVersion) => {
     if (isNaN(webdavVersion)) {
-      console.log('%c [ 拉去远端错误， ]-143', 'font-size:13px; background:pink; color:#bf2c9f;', webdavVersion)
+      console.log('%c [ 拉取远端错误 ]-143', 'font-size:13px; background:pink; color:#bf2c9f;', webdavVersion)
       return;
     }
 
@@ -162,42 +162,54 @@ export default class DataStores {
         const blob = new Blob([data], {
           type: 'application/json'
         });
-        await db.delete();
 
-        if (!db.isOpen()) {
-          await db.open();
-        }
+        blob.text().then(async (text) => {
+          const json = JSON.parse(text);
+          const databaseVersion = json.data.databaseVersion;
 
-        await db.import(blob, {
-          noTransaction: false,
-          clearTables: true,
-          acceptVersionDiff: true,
-          progressCallback
-        });
+          await db.delete();
 
-        setTimeout(() => {
-          option.setItem('webdavVersion', parseInt(webdavVersion)); // 强行刷新版本号
-          localStorageKeys.forEach((key) => {
-            if (key != 'webdavVersion') {
-              const value = this.cache[key];
-              option.setItem(key, value);
-              // localStorage.removeItem(key);
-            }
+          if (!db.isOpen()) {
+            await db.open();
+          }
+
+          await db.import(blob, {
+            noTransaction: false,
+            clearTables: true,
+            acceptVersionDiff: true,
+            progressCallback
           });
-          option.resetChromeSaveOption().then(() => {
-            console.log('%c [ 数据推送成功 ]', 'font-size:13px; background:pink; color:#bf2c9f;')
-          }).catch((error) => {
-            console.error(error);
-            tools.error(`同步数据错误: ${error.message}`);
-          }).finally(() => {
-            setTimeout(() => {
-              link.restart();
-              note.init();
-              this.lock = false;
-              this.waitType = '';
-            }, 200);
-          });
-        }, 0);
+
+          setTimeout(() => {
+            option.setItem('webdavVersion', parseInt(webdavVersion)); // 强行刷新版本号
+            localStorageKeys.forEach((key) => {
+              if (key != 'webdavVersion') {
+                const value = this.cache[key];
+                option.setItem(key, value);
+                // localStorage.removeItem(key);
+              }
+            });
+            option.resetChromeSaveOption().then(() => {
+              console.log('%c [ 数据推送成功 ]', 'font-size:13px; background:pink; color:#bf2c9f;')
+            }).catch((error) => {
+              console.error(error);
+              tools.error(`同步数据错误: ${error.message}`);
+            }).finally(() => {
+              setTimeout(() => {
+                link.restart();
+                note.init();
+                this.lock = false;
+                this.waitType = '';
+                
+                if (db.verno !== databaseVersion) {
+                  db.__upgrade(db);
+                }
+              }, 200);
+            });
+          }, 0);
+
+        })
+
       })
 
     } catch (error) {

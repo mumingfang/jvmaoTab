@@ -25,6 +25,12 @@ const UpdateRecords = () => {
             <h2>更新日志</h2>
             <ul className="scroll-container">
                 <li>
+                    <span>1.2.8</span>
+                    <ul>
+                        <li>修复: 壁纸上传问题</li>
+                    </ul>
+                </li>
+                <li>
                     <span>1.2.7</span>
                     <ul>
                         <li>修复: 快捷搜索跳转icon不显示问题</li>

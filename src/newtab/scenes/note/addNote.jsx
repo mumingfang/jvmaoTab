@@ -11,8 +11,8 @@ const Warp = styled.div`
 `;
 
 const AddNote = (props) => {
+    const { refresh, noteType } = props
     const { note, tools } = useStores();
-    const { refresh } = props
     const [text, setText] = React.useState('');
     const editorEvent$ = useEventEmitter();
 
@@ -40,6 +40,7 @@ const AddNote = (props) => {
                 } else if (note.openId === 0) {
                     note.addNote({
                         content: html,
+                        state: noteType
                     }).then((res) => {
                         note.open(res);
                         refresh();
@@ -60,7 +61,7 @@ const AddNote = (props) => {
             }).catch((err) => {
                 if (err.name === "DatabaseClosedError") {
                     window.location.reload();
-                  }
+                }
                 tools.error('获取便签失败');
                 console.error("findNote", err);
             })

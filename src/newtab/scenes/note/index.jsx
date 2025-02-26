@@ -3,7 +3,7 @@ import { Col, Row, theme, Typography, Button, Tooltip, Popconfirm, Checkbox, Spa
 import { observer } from "mobx-react";
 import styled from "styled-components";
 import useStores from "~/hooks/useStores";
-import { useMemoizedFn, useVirtualList, useRequest, useSelections, useUpdateEffect } from "ahooks";
+import { useMemoizedFn, useVirtualList, useRequest, useSelections, useUpdateEffect, useDebounceEffect } from "ahooks";
 import AddNote from "~/scenes/note/addNote";
 import TextOnlyComponent from "~/components/TextOnlyComponent";
 import { headerHeight } from "~/view/Home";
@@ -186,18 +186,19 @@ const NoteHome = (props) => {
     const { token } = useToken();
     const [selectOpen, setSelectOpen] = React.useState(false);
     const [stickyIds, setStickyIds] = React.useState([]);
+    const [noteType, setNoteType] = React.useState(1);
 
     const containerRef = React.useRef(null);
     const wrapperRef = React.useRef(null);
 
     const getNote = useMemoizedFn(() => {
-        return note.getNote(1, 9999).then((res) => {
+        return note.getNote(1, 9999, noteType).then((res) => {
             return res.list;
         })
-    }, []);
+    }, [noteType]);
 
     const { data, error, refresh, run } = useRequest(getNote, {
-        manual: true
+        manual: true,
     });
 
     const onEdit = useMemoizedFn((id) => {
@@ -222,9 +223,9 @@ const NoteHome = (props) => {
 
     const originalList = React.useMemo(() => {
         if (typeof data !== 'undefined' && !data?.length && !error && note.openId != 0) {
-            setTimeout(() => {
-                note.open(0);
-            }, 50);
+            // setTimeout(() => {
+            //     note.open(0);
+            // }, 50);
         }
         return Array.from(data || [])
     }, [data]);
@@ -279,25 +280,43 @@ const NoteHome = (props) => {
         ]);
     }, [stickyIds]);
 
-    React.useEffect(() => {
-        run();
-        upadteIds();
-    }, [])
-
-    React.useEffect(() => {
-        if (note.openId == -1 && list?.length) {
-            note.open(list[0]?.data?.id);
+    useUpdateEffect(() => {
+        // console.log('%c XJ - [ list ]-287-「index.jsx」', 'font-size:13px; background:#f8f53d; color:#000;',);
+        if (note.openId == -1) {
+            if (list?.length) {
+                note.open(list[0]?.data?.id);
+            } else {
+                note.open(0);
+            }
         }
-    }, [list])
-
+    }, [list]);
 
     useUpdateEffect(() => {
-        setTimeout(() => {
+        run();
+        upadteIds();
+    }, [noteType])
+
+    React.useEffect(() => {
+        if (note.activeTabKey) {
+            const id = `${note.activeTabKey}`.split('_')[1];
+            setNoteType(Number(id));
             note.open(-1);
-            refresh();
-            upadteIds();
-        }, 300);
-    }, [tools.timeKey]);
+        }
+    }, [note.activeTabKey]);
+
+    useDebounceEffect(
+        () => {
+            note.open();
+            setTimeout(() => {
+                refresh();
+                upadteIds();
+            }, 0);
+        },
+        [tools.timeKey],
+        {
+            wait: 10,
+        },
+    );
 
     return (
         <RowWrap className="sn-bg-wrap" >
@@ -306,7 +325,7 @@ const NoteHome = (props) => {
                     <div className="left">
                         {selectOpen ? (
                             <Space>
-                                <Checkbox checked={allSelected} onClick={toggleAll} indeterminate={partiallySelected}>
+                                <Checkbox checked={allSelected} onClick={toggleAll} indeterminate={partiallySelected} tabindex="-1">
                                     全选
                                 </Checkbox>
                                 <Popconfirm
@@ -317,19 +336,19 @@ const NoteHome = (props) => {
                                     cancelText="取消"
                                     disabled={selected.length === 0}
                                 >
-                                    <BtnSelectItem danger disabled={selected.length === 0} size="small" icon={<IconTrashX size={16} stroke={1.4} />} >删除</BtnSelectItem>
+                                    <BtnSelectItem tabindex="-1" danger disabled={selected.length === 0} size="small" icon={<IconTrashX size={16} stroke={1.4} />} >删除</BtnSelectItem>
                                 </Popconfirm>
-                                <BtnSelectItem size="small" icon={<IconX size={16} stroke={1.4} />} onClick={() => setSelectOpen(false)}>取消</BtnSelectItem>
+                                <BtnSelectItem tabindex="-1" size="small" icon={<IconX size={16} stroke={1.4} />} onClick={() => setSelectOpen(false)}>取消</BtnSelectItem>
                             </Space>
                         ) : (
                             <Tooltip placement="top" title={"批量删除"}>
-                                <BtnSelect type="link" disabled={selectList.length === 0} icon={<IconSelect size={18} stroke={1.4} />} onClick={() => setSelectOpen(true)}></BtnSelect>
+                                <BtnSelect tabindex="-1" type="link" disabled={selectList.length === 0} icon={<IconSelect size={18} stroke={1.4} />} onClick={() => setSelectOpen(true)}></BtnSelect>
                             </Tooltip>
                         )}
                     </div>
                     <div className="right">
                         <Tooltip placement="top" title={"新增便签"}>
-                            <BtnAdd icon={<IconEditCircle size={18} stroke={1.4} />} onClick={() => { note.open(0) }}></BtnAdd>
+                            <BtnAdd tabindex="-1" icon={<IconEditCircle size={18} stroke={1.4} />} onClick={() => { note.open(0) }}></BtnAdd>
                         </Tooltip>
                     </div>
                 </ListHeader>
@@ -376,7 +395,6 @@ const NoteHome = (props) => {
                         ))}
                     </div>
                 </Container>
-
             </Left>
             <Rtight span={17}>
                 <RightBtnWrap>
@@ -389,12 +407,12 @@ const NoteHome = (props) => {
                             cancelText="取消"
                         >
                             <Tooltip placement="top" title={"删除便签"}>
-                                <BtnDel danger type="text" icon={<IconTrashX size={20} stroke={1.4} />}></BtnDel>
+                                <BtnDel tabindex="-1" danger type="text" icon={<IconTrashX size={20} stroke={1.4} />}></BtnDel>
                             </Tooltip>
                         </Popconfirm>
                     ) : null}
                 </RightBtnWrap>
-                <AddNote refresh={refresh} />
+                <AddNote refresh={refresh} noteType={noteType} />
             </Rtight>
         </RowWrap>
     );

@@ -304,7 +304,7 @@ const LinkPanel = (props) => {
             // console.log('%c [ value ]-281', 'font-size:13px; background:pink; color:#bf2c9f;', value)
           }}
         ></ReactSortable>
-        <IconTrash size={40} />
+        <IconTrash size={40} tabindex="-1"/>
       </motion.div>
     );
   }, [isMove])

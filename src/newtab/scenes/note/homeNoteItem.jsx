@@ -171,6 +171,7 @@ const HomeNoteItem = (props) => {
                 } else if (v.id === 0) {
                     note.addNote({
                         content: html,
+                        state: note.getTopNoteTabId(),
                     }).then((res) => {
                         v.id = res;
                         saveNoteId(kId, res);
@@ -300,6 +301,7 @@ const HomeNoteItem = (props) => {
                             onClick={() => removeNote(kId)}
                             size="small"
                             type={"text"}
+                            tabindex="-1"
                             icon={<IconX size={16} stroke={1.4} />}
                         />
                         <Editor event={editorEvent$} content={text} />

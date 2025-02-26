@@ -38,6 +38,13 @@ body {
   margin: 0;
 }
 
+// *:focus {
+//   outline: 2px solid blue;
+//   /* 去除默认的轮廓，设置为蓝色边框 */
+//   box-shadow: 0 0 5px rgba(0, 0, 255, 0.3);
+//   /* 添加蓝色的阴影效果 */
+// }
+
 #root {
   position: relative;
   outline: none;
@@ -93,6 +100,7 @@ body {
   &.disabled {
     cursor: not-allowed;
   }
+
   .link-a {
     position: absolute;
     top: 0;
@@ -423,10 +431,15 @@ body {
 }
 
 @keyframes jv-blink {
-  0%, 100% {
-    opacity: 1; /* 完全不透明 */
+
+  0%,
+  100% {
+    opacity: 1;
+    /* 完全不透明 */
   }
+
   50% {
-    opacity: 0.5; /* 完全透明 */
+    opacity: 0.5;
+    /* 完全透明 */
   }
 }

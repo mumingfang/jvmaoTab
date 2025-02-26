@@ -304,29 +304,29 @@ export default class LinkStore {
                   hide: true,
                 },
                 {
-                  title: "分组（右击可以将此分组添加至首屏）",
+                  title: "分组（右击标题可以添加至首屏）",
                   parentId: timeKey,
                   timeKey: timeKeyPanel,
                 },
                 {
-                  title: "霂明坊",
-                  url: "https://mumingfang.com/group-11-1.html",
+                  title: "摸鱼爱好者导航",
+                  url: "https://n.mumingfang.com/my",
                   parentId: timeKeyPanel,
                   timeKey: getID(),
                 },
                 {
                   title: "点击可进行访问",
-                  url: "https://mumingfang.com/group-11-1.html",
+                  url: "https://n.mumingfang.com/my",
                   parentId: timeKeyPanel,
                   timeKey: getID(),
                 },
                 {
                   title: "右击可以删除",
-                  url: "https://mumingfang.com/group-11-1.html",
+                  url: "https://n.mumingfang.com/my",
                   parentId: timeKeyPanel,
                   timeKey: getID(),
                 },
-              ];
+              ]; 
               this.addLink(links).then(() => {
                 this.getNav();
               })

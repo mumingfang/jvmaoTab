@@ -18,22 +18,26 @@ import {
 import {
   MD5
 } from 'crypto-js';
+import Storage from "~/utils/storage";
 
-const field = ["id", "content", "fromUrl", "sort"];
+const field = ["id", "content", "fromUrl", "sort", "state"];
 
 export default class NoteStores {
   openEditor = false;
   openId = -1;
+  activeTabKey = '';
 
   constructor(rootStore) {
     makeObservable(this, {
       openEditor: observable,
       openId: observable,
+      activeTabKey: observable,
       addNote: action,
       getNote: action,
       findNote: action,
       updateNote: action,
       open: action,
+      updateActiveTabKey: action,
     });
     this.rootStore = rootStore;
   }
@@ -51,6 +55,7 @@ export default class NoteStores {
             const note = [{
               "content": "<p>欢迎使用便签</p><p>小技巧:</p><ol><li><p>在首屏壁任意地方双击可以快捷添加壁纸。</p></li><li><p>右击左侧便签列表可以将此标签贴在首屏。</p></li><li><p>在任意网页选中文本右击可以快速将文本添加至便签。</p></li><li><p>任意网页中右击图片也可以快捷添加。</p></li></ol><p></p><p>如果使用中有任何问题可以加 QQ群 429303318</p><p> </p>",
               "sort": 0,
+              "state": 1,
             }];
             this.addNote(note)
           }, 0);
@@ -62,7 +67,27 @@ export default class NoteStores {
   }
 
   open = (id) => {
-    this.openId = id;
+    if (typeof id === 'undefined') {
+      Storage.get('noteOpenId').then(({
+        openId = '',
+      }) => {
+        if (openId) {
+          this.openId = openId;
+        } else {
+          this.openId = -1;
+        }
+      });
+    } else {
+      this.openId = id;
+      Storage.set('noteOpenId', {
+        openId: id,
+      });
+    }
+
+  }
+
+  updateActiveTabKey = (key) => {
+    this.activeTabKey = key;
   }
 
   findNote = (id) => {
@@ -78,21 +103,25 @@ export default class NoteStores {
     });
   }
 
-  getNote = (page = 1, limit = 48, type = 'note') => {
+  getNote = (page = 1, limit = 48, type = 1) => {
     const {
       homeNoteData
     } = this.rootStore.option.item;
     const cIds = [];
+    // 过滤掉胶囊
     homeNoteData?.forEach((v) => {
       if (v.type == 'capsule') {
         cIds.push(v.id);
       }
     })
     return new Promise((resolve, reject) => {
-      Promise.all([db.note.count(), db.note.orderBy('updateTime').reverse()
+      Promise.all([
+        db.note.count((note) => note.state == type),
+        db.note.where('state').equals(type).reverse()
         .offset((page - 1) * limit)
         .limit(limit)
-        .toArray().then((res) => {
+        .sortBy('updateTime')
+        .then((res) => {
           return (res || []).filter((v) => !cIds.includes(v.id))
         })
       ]).then((res) => {
@@ -114,6 +143,7 @@ export default class NoteStores {
           add["createTime"] = dayjs().format();
           add["updateTime"] = dayjs().format();
           add["sort"] = v?.sort || 0;
+          add["state"] = v?.state || 1;
           return add;
         });
         db.note
@@ -131,6 +161,7 @@ export default class NoteStores {
         add["createTime"] = dayjs().format();
         add["updateTime"] = dayjs().format();
         add["sort"] = note?.sort || 0;
+        add["state"] = note?.state || 1;
         db.note
           .put(add)
           .then((res) => {
@@ -167,7 +198,38 @@ export default class NoteStores {
     });
   }
 
+  // 软删除 仅更改状态
   delectNote = (id) => {
+    return new Promise((resolve, reject) => {
+      if (Array.isArray(id)) {
+        Promise.all(id.map((v) => {
+          return this.updateNote(v, {
+            state: -1
+          });
+        })).then((res) => {
+          resolve(res);
+        }).catch((err) => {
+          reject(err);
+        });
+      } else {
+        if (!id) {
+          reject('id is null');
+          return;
+        }
+
+        this.updateNote(id, {
+          state: -1
+        }).then((res) => {
+          resolve(res);
+        }).catch((err) => {
+          reject(err);
+        });
+
+      }
+    });
+  }
+
+  _delectNote = (id) => {
     return new Promise((resolve, reject) => {
       if (Array.isArray(id)) {
         db.note.bulkDelete(id).then((res) => {
@@ -231,12 +293,12 @@ export default class NoteStores {
           v.content += `<p></p><p>来自：<a href="${v.fromUrl}">${v.title}</a></p>`;
           notes.push(v);
         }
-
         this.addNote(notes).then((res) => {
           chrome.storage.local.remove(['contextMenusData']);
         })
       }
     });
+    this.clearNoteDustbin();
   }
 
   addSticky = ({
@@ -329,5 +391,39 @@ export default class NoteStores {
     this.rootStore.option.setItem('homeNoteData', newData, false);
   }
 
+  // 清空垃圾桶里 30 天前的便签
+  clearNoteDustbin = () => {
+    // 用Storage 控制 每天仅执行一次
+    Storage.get('clearNoteDustbin').then((time) => {
+      if (!time || dayjs().diff(time, 'day') > 1) {
+        Storage.set('clearNoteDustbin', dayjs().format());
+        this.getNote(1, 1000, -1).then((res) => {
+          const notes = res.list;
+          notes.forEach((v) => {
+            if (v.updateTime && dayjs().diff(v.updateTime, 'day') > 30) {
+              this._delectNote(v.id);
+            }
+          })
+        })
+      }
+    })
+  }
 
+  addNewTab = () => {
+    const noteTab = this.rootStore.option.getItem.noteTab;
+    const addMinNoteTabNum = this.rootStore.option.getItem.addMinNoteTabNum;
+    const newTab = _.cloneDeep(noteTab);
+    newTab.push({
+      key: `note_${addMinNoteTabNum}`,
+      id: addMinNoteTabNum,
+      title: '新便签页',
+    })
+    this.rootStore.option.setItem('noteTab', newTab, false);
+    this.rootStore.option.setItem('addMinNoteTabNum', addMinNoteTabNum + 1, false);
+  }
+
+  getTopNoteTabId = () => {
+    const noteTab = this.rootStore.option.getItem.noteTab;
+    return noteTab[0].id || this.rootStore.option.getItem.addMinNoteTabNum - 1;
+  }
 }

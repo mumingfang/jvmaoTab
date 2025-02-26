@@ -185,8 +185,8 @@ const HomeNote = (props) => {
 
     return (
         <Wrap zIndex={stickled ? -1 : 20} onDoubleClick={onDoubleClick} >
-            <DndContext autoScroll={false} modifiers={[restrictToParentElement]}>
-                <DndContextWrap className="sn-bg-wrap" data-type="bg-root" ref={parentRef} onContextMenu={(e) => onContextMenu(e)}>
+            <DndContext autoScroll={false} modifiers={[restrictToParentElement]} tabindex="-1">
+                <DndContextWrap className="sn-bg-wrap" data-type="bg-root"  ref={parentRef} onContextMenu={(e) => onContextMenu(e)}>
                     <AnimatePresence>
                         {!show && (homeNoteData || []).map((v) => {
                             return <HomeNoteItem

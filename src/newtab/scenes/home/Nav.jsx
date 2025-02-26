@@ -131,8 +131,8 @@ const NavLi = styled.li`
 `;
 
 const Nav = (props) => {
-  const { link, tools, option, data } = useStores();
-  const { showLinkNav, linkOpenSelf } = option.item;
+  const { link, tools, option, note } = useStores();
+  const { showLinkNav, linkOpenSelf, noteTab = [], hasNoteTrash } = option.item;
   const { token } = useToken();
   const navigate = useNavigate();
   const location = useLocation();
@@ -146,7 +146,7 @@ const Nav = (props) => {
 
   const onLinkTitleClick = useMemoizedFn(
     (timeKey) => {
-      if (!timeKey != state.activeKey) {
+      if (timeKey != state.activeKey) {
         state.activeKey = timeKey;
         link.setActiveId(timeKey);
       }
@@ -154,51 +154,70 @@ const Nav = (props) => {
     [state.activeKey]
   );
 
-  const foo = useCreation(() => {
-    const n = [
-      ...link.linkNav.map((item, index) => {
-        return getItem({
-          label: item.title,
-          key: item.timeKey,
-          id: item.linkId,
-          icon: <IconFolder size={16} stroke={0.8} />,
-          type: "link",
-          _info: item,
-        });
-      }),
-      {
-        type: "divider",
-      },
-      getItem({
-        label: "便签",
-        key: "note",
-        icon: <IconNotes size={20} stroke={1} />,
-      }),
-      {
-        type: "divider",
-      },
-    ];
+  const onNoteTitleClick = useMemoizedFn(
+    (key) => {
+      if (key != state.activeKey) {
+        state.activeKey = key;
+        note.updateActiveTabKey(key);
+      }
+    },
+    [state.activeKey]
+  );
 
+  const foo = useCreation(() => {
+    const links = link.linkNav.map((item, index) => {
+      return getItem({
+        label: item.title,
+        key: item.timeKey,
+        id: item.linkId,
+        icon: <IconFolder size={16} stroke={0.8} />,
+        type: "link",
+        _info: item,
+      });
+    });
+
+    const notes = noteTab.map((item, index) => {
+      return getItem({
+        label: item.title,
+        key: item.key,
+        icon: <IconNotes size={20} stroke={1} />,
+        type: "note",
+      });
+    });
+
+    const n = [
+      ...links,
+      {
+        type: "divider",
+      },
+      ...notes,
+    ];
+    if (hasNoteTrash) {
+      n.push(getItem({
+        label: "回收站",
+        key: "note_-1",
+        id: "-1",
+        type: "note",
+        icon: <IconNotes size={20} stroke={1} />,
+      }));
+    }
+    n.push({
+      type: "divider",
+    });
     n.push(getItem({
       label: "首选项",
       key: "preferences",
       icon: <IconSettings size={20} stroke={1} />,
     }));
-    // n.push(getItem({
-    //   label: "数据导出",
-    //   key: "export",
-    //   icon: <IconDatabaseExport size={20} stroke={1} />,
-    // }));
+
     return n;
-  }, [link.linkNav, onLinkTitleClick, showLinkNav]);
+  }, [link.linkNav, showLinkNav, noteTab, hasNoteTrash]);
 
   const isActive = useMemoizedFn((key, type) => {
     if (type == "link" && location.pathname == '/') {
       return state.activeKey == key
-    } else {
-      if (key == "note") {
-        return location.pathname == "/note"
-      }
+    } else if (type == "note" && location.pathname == '/note') {
+      return state.activeKey == key
     }
     return false
 
@@ -212,8 +231,9 @@ const Nav = (props) => {
       saveLActiveCache(e);
     } else if (e.key === "preferences") {
       tools.preferencesOpen = true;
-    } else if (e.key === "note") {
+    } else if (e.type === "note") {
       navigate('/note');
+      onNoteTitleClick(e.key);
       saveLActiveCache(e);
     } else if (e.key === "Manual") {
       tools.openPublicModal("Manual", {}, '90vw');
@@ -237,6 +257,7 @@ const Nav = (props) => {
   }, [linkOpenSelf]);
 
   const onContextMenu = useMemoizedFn((e, props) => {
+    console.log('%c XJ - [ props ]-237-「Nav.jsx」', 'font-size:13px; background:#f8f53d; color:#000;', props);
     e.stopPropagation();
     e.preventDefault();
     const menuArr = [];
@@ -311,22 +332,53 @@ const Nav = (props) => {
           });
         },
       });
-    }
+      menuArr.push({
+        label: "新建抽屉",
+        key: "new-link",
+        icon: <IconFolderPlus />,
+        onClick: () => {
+          link.addLink({
+            parentId: link.linkNav[link.linkNav.length - 1].parentId,
+            title: '新抽屉',
+            timeKey: getID()
+          }).then((res) => {
+            link.updateNav();
+          })
+        }
+      });
+    } else if (props.type == "note") {
+      // menuArr.push({
+      //   label: "重命名",
+      //   key: "edit-link",
+      //   icon: <IconPencilMinus />,
+      //   onClick: () => {
+      //     console.log("[ title ] >", props);
+      //     tools.openPublicModal(
+      //       "EditLink",
+      //       {
+      //         title: props.label,
+      //         timeKey: props.key,
+      //         linkId: props.id,
+      //         type: 'note',
+      //         modalTitle: '重命名',
+      //         cb: () => {
+      //           link.updateNav();
+      //         }
+      //       },
+      //       400
+      //     );
+      //   },
+      // });
+      // menuArr.push({
+      //   label: "新建便签页",
+      //   key: "new-note",
+      //   icon: <IconFolderPlus />,
+      //   onClick: () => {
+      //     note.addNewTab();
+      //   }
+      // });
 
-    menuArr.push({
-      label: "新建抽屉",
-      key: "new-link",
-      icon: <IconFolderPlus />,
-      onClick: () => {
-        link.addLink({
-          parentId: link.linkNav[link.linkNav.length - 1].parentId,
-          title: '新抽屉',
-          timeKey: getID()
-        }).then((res) => {
-          link.updateNav();
-        })
-      }
-    });
+    }
 
     tools.setRightClickEvent(e, menuArr);
   }, [link.linkNav]);

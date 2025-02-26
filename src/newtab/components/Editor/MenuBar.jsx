@@ -10,6 +10,8 @@ import {
   IconArrowForwardUp,
   IconListDetails,
 } from "@tabler/icons-react";
+import styled from "styled-components";
+
 
 function MenuBar(props) {
   const { editor } = props;
@@ -27,6 +29,7 @@ function MenuBar(props) {
           disabled={disabled}
           type={active ? "primary" : "text"}
           icon={<Icon size={20} stroke={1.4} />}
+          tabindex="-1"
         />
       </Tooltip>
     );

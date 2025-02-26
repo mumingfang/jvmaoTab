@@ -74,35 +74,48 @@ const PreferencesData = () => {
                     var reader = new FileReader();
                     reader.onload = async (e) => {
                         var blob = new Blob([e.target.result], { type: info.file.type });
+
                         try {
-                            await db.delete();
-                            if (!db.isOpen()) {
-                                await db.open();
-                            }
+                            blob.text().then(async (text) => {
+                                const json = JSON.parse(text);
+                                const databaseName = json.data.databaseName;
+                                if (databaseName !== 'jvmao-tab') {
+                                    throw new Error('数据库名称错误');
+                                }
+                                const databaseVersion = json.data.databaseVersion;
 
-                            await db.import(blob, { noTransaction: false, clearTables: true, acceptVersionDiff: true, progressCallback });
+                                await db.delete();
+                                if (!db.isOpen()) {
+                                    await db.open();
+                                }
 
-                            setTimeout(() => {
-                                data.deleteServeData();
-                                option.resetChromeSaveOption().then(() => {
-                                    tools.success('数据导入成功');
-                                }).catch(() => {
-                                    tools.error('数据导入失败，O-86');
-                                }).finally(() => {
-                                    setTimeout(() => {
-                                        setSpinning(false);
-                                        link.restart();
-                                        note.init();
-                                    }, 300);
-                                });
-                            }, 1000);
+                                await db.import(blob, { noTransaction: false, clearTables: true, acceptVersionDiff: true, progressCallback });
 
+                                setTimeout(() => {
+                                    data.deleteServeData();
+                                    option.resetChromeSaveOption().then(() => {
+                                        tools.success('数据导入成功');
+                                    }).catch(() => {
+                                        tools.error('数据导入失败，O-86');
+                                    }).finally(() => {
+                                        setTimeout(() => {
+                                            setSpinning(false);
+                                            link.restart();
+                                            note.init();
+
+                                            if (db.verno !== databaseVersion) {
+                                                db.__upgrade(db);
+                                            }
+                                        }, 300);
+                                    });
+                                }, 1000);
+                            });
 
                         } catch (error) {
-                            console.error(error.message);
+                            console.error(error);
                             tools.error(`${error.message}`);
                             setTimeout(() => {
-                                window.location.reload();
+                                // window.location.reload();
                             }, 2000);
                         }
                     }

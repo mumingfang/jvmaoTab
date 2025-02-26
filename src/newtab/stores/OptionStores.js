@@ -15,7 +15,7 @@ import {
 
 const localStorageKeys = ['bgType', 'bg2Type', 'bgBase64', 'bg2Base64', 'webdavVersion'];
 
-const v = 12;
+const v = 13;
 const updateOptions = {
   1: {
     errData: '9527'
@@ -74,8 +74,17 @@ const updateOptions = {
     webdavVersion: 1,
     webdavTime: 3,
   },
-  12 :{
+  12: {
     homeImgOpacity: 0.2,
+  },
+  13: {
+    noteTab: [{
+      key: `note_1`,
+      id: 1,
+      title: '便签',
+    }],
+    addMinNoteTabNum: 2,
+    hasNoteTrash: false,
   }
 }
 
@@ -366,7 +375,7 @@ export default class OptionStores {
         db.option.clear().then(() => {
           this.update(0, homeId);
           setTimeout(() => {
-            // window.location.reload();
+            window.location.reload();
           }, 6000);
         }).catch(error => {
           console.error('清空表时发生错误', error);
