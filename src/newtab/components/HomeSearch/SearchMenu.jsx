@@ -64,8 +64,8 @@ const SearchMenu = (props) => {
   useKeyPress(
     "tab",
     (e) => {
+      e.preventDefault();
       if (isFocus) {
-        e.preventDefault();
         changeNext();
       }
     },

@@ -221,6 +221,18 @@ const HomeSearch = (props) => {
     goToTranslate(state.value);
   });
 
+  useKeyPress(
+    "tab",
+    (e) => {
+      if (!inputFocus) {
+        inputRef.current.focus();
+      }
+    },
+    {
+      exactMatch: true,
+    }
+  );
+
   React.useEffect(() => {
     if (stickled) {
       state.open = false;

@@ -25,6 +25,12 @@ const UpdateRecords = () => {
             <h2>更新日志</h2>
             <ul className="scroll-container">
                 <li>
+                    <span>1.2.9</span>
+                    <ul>
+                        <li>新增: 任意位置按TAB会focus输入框</li>
+                    </ul>
+                </li>
+                <li>
                     <span>1.2.8</span>
                     <ul>
                         <li>修复: 壁纸上传问题</li>
