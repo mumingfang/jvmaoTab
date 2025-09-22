@@ -99,7 +99,7 @@ const PreferencesLink = () => {
             </Form.Item>
             {/* <Divider /> */}
             <Form.Item name='linkOpenSelf' valuePropName="checked" style={{ marginBottom: 5 }}>
-                <Checkbox >链接在当前标签页中打开</Checkbox>
+                <Checkbox >链接在新标签页中打开</Checkbox>
             </Form.Item>
             <Form.Item name='showLinkNav' valuePropName="checked" style={{ marginBottom: 5 }}>
                 <Checkbox >在页脚里显示导航</Checkbox>
