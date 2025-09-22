@@ -1,7 +1,7 @@
 const manifest = {
   manifest_version: 3,
   name: "橘猫起始页",
-  version: "1.2.9",
+  version: "1.2.10",
   description: "起始页还可以是这样的",
   homepage_url: "https://www.jvmao.net",
   icons: {
