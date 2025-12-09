@@ -25,6 +25,15 @@ const UpdateRecords = () => {
             <h2>更新日志</h2>
             <ul className="scroll-container">
                 <li>
+                    <span>1.2.11</span>
+                    <ul>
+                        <li>优化: 添加防抖处理以优化搜索请求</li>
+                        <li>优化: 改进键盘导航支持（上下键切换选项）</li>
+                        <li>修复: 输入框值同步问题</li>
+                        <li>优化: 更新状态管理逻辑，确保更流畅的用户体验</li>
+                    </ul>
+                </li>
+                <li>
                     <span>1.2.10</span>
                     <ul>
                         <li>修复: webdav教程链接失效问题</li>

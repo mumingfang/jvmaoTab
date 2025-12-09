@@ -54,7 +54,6 @@ const WebDAV = () => {
     const onFinish = (v) => {
         setLoading(true);
         data.test(v.webDavURL, v.webDavUsername, v.webDavPassword, v.webDavDir).then((res) => {
-            console.log('%c [ res ]-29', 'font-size:13px; background:pink; color:#bf2c9f;', res)
             if (res == 1) {
                 confirm({
                     title: "监测到远端有数据，即将删除本地所有数据",
@@ -82,15 +81,19 @@ const WebDAV = () => {
                 });
             } else {
                 handleChange(v);
+                option.setItem('webdavOpen', true);
+                tools.success("WebDAV 设置成功");
                 setTimeout(() => {
                     window.location.reload();
-                    tools.success("WebDAV 设置成功");
                 }, 1000);
             }
 
         }).catch((err) => {
             tools.error("WebDAV 设置失败");
+            setLoading(false);
         }).finally(() => {
+            // 如果用户没有点击确认或取消，确保重置 loading 状态
+            // 注意：在 onOk 和 onCancel 中已经处理了 loading 状态
         });
 
 

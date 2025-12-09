@@ -431,7 +431,7 @@ const Nav = (props) => {
       </NavTOP>
       <NavBottom>
         <span onClick={() => onClick({ key: 'Manual' })}>关于</span>
-        <span onClick={() => onClick({ key: 'discuss' })}>讨论</span>
+        {/* <span onClick={() => onClick({ key: 'discuss' })}>讨论</span> */}
         {showLinkNav ? <span onClick={() => onClick({ key: 'linkNav' })}>导航</span> : null}
         <i>v{manifest.version}</i>
       </NavBottom>

@@ -60,7 +60,7 @@ const find = (dbName, id) => {
 const add = (dbName, data, pickData = []) => {
   return new Promise((resolve, reject) => {
     if (Array.isArray(data)) {
-      const addList = pickData?.lenght ? data.map((v) => _.pick(v, field)) : data;
+      const addList = pickData?.length ? data.map((v) => _.pick(v, field)) : data;
       db[dbName]
         .bulkPut(addList)
         .then((res) => {
@@ -70,7 +70,7 @@ const add = (dbName, data, pickData = []) => {
           reject(err);
         });
     } else {
-      const add = pickData?.lenght ? _.pick(link, field) : data;
+      const add = pickData?.length ? _.pick(link, field) : data;
       db[dbName]
         .put(add)
         .then((res) => {
@@ -84,6 +84,6 @@ const add = (dbName, data, pickData = []) => {
 }
 
 const update = (dbName, id, data, pickData = []) => {
-  const value = pickData?.lenght ? data.map((v) => _.pick(v, field)) : data;
+  const value = pickData?.length ? data.map((v) => _.pick(v, field)) : data;
   return db[dbName].update(id, value);
 }
