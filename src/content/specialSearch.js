@@ -8,103 +8,132 @@ let processedQuery = null;
 /**
  * 通用特殊搜索引擎处理组件
  * 用于处理不支持URL参数直接搜索的AI助手（如豆包）
- * 通过检测URL中的jvmaoQuery参数，延迟后自动填入输入框并触发回车
+ * 通过 chrome.storage 获取查询内容并自动填入输入框
  */
 const SpecialSearch = () => {
     React.useEffect(() => {
-        // 优先从 sessionStorage 获取查询内容（更可靠，不会被清除）
-        let queryParam = null;
-        try {
-            const storedQuery = sessionStorage.getItem('jvmaoQuery');
-            const storedTime = sessionStorage.getItem('jvmaoQueryTime');
-            // 检查是否在 30 秒内（防止过期数据）
-            if (storedQuery && storedTime) {
-                const timeDiff = Date.now() - parseInt(storedTime, 10);
-                if (timeDiff < 30000) { // 30 秒内有效
-                    queryParam = storedQuery;
-                } else {
-                    // 过期数据，清除
-                    sessionStorage.removeItem('jvmaoQuery');
-                    sessionStorage.removeItem('jvmaoQueryTime');
-                }
-            }
-        } catch (e) {
-            console.warn('[SpecialSearch] Failed to read sessionStorage:', e);
-        }
-        
-        // 如果 sessionStorage 没有，回退到 URL 参数
-        if (!queryParam) {
-            const url = new URL(window.location.href);
-            queryParam = url.searchParams.get("jvmaoQuery");
-        }
-        
-        // 如果没有查询内容，不需要处理
-        if (!queryParam) {
-            isProcessing = false;
-            processedQuery = null;
-            return;
-        }
-
-        // 如果正在处理相同的query，直接返回
-        if (isProcessing && processedQuery === queryParam) {
-            return;
-        }
-
-        // 标记为正在处理
-        isProcessing = true;
-        processedQuery = queryParam;
-        
-        // 获取当前hostname
+        // 获取当前 hostname
         const url = new URL(window.location.href);
         const hostname = url.hostname;
         
-        // 从配置中查找匹配的搜索引擎配置
-        // 需要从chrome storage获取自定义配置
-        chrome.runtime.sendMessage({
-            type: "getOption",
-        }, (res) => {
-            if (chrome.runtime.lastError) {
-                console.error("Chrome runtime error:", chrome.runtime.lastError);
-                isProcessing = false;
-                return;
-            }
-
-            // 合并内置配置和自定义配置
-            const customkey = res?.customkey || [];
-            const allSearchEngines = [...SoIcon, ...customkey];
-            
-            // 查找匹配的搜索引擎配置
-            const searchConfig = allSearchEngines.find((engine) => {
-                if (!engine.isSpecialType) return false;
-                if (!engine.host || !Array.isArray(engine.host)) return false;
-                return engine.host.includes(hostname);
+        // 优先从 chrome.storage.local 获取查询内容（最可靠的方式）
+        const storageKey = `jvmaoQuery_${hostname}`;
+        
+        // 从 chrome.storage 读取
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+            chrome.storage.local.get([storageKey], (result) => {
+                if (chrome.runtime.lastError) {
+                    handleFallback();
+                    return;
+                }
+                
+                const queryData = result[storageKey];
+                
+                if (queryData && queryData.query) {
+                    // 检查是否在 30 秒内（防止过期数据）
+                    const timeDiff = Date.now() - (queryData.timestamp || 0);
+                    
+                    if (timeDiff < 30000) { // 30 秒内有效
+                        // 读取成功后，清除存储的数据（避免重复处理）
+                        chrome.storage.local.remove([storageKey]);
+                        
+                        // 继续处理搜索
+                        processSearch(queryData.query, url, hostname);
+                    } else {
+                        // 过期数据，清除
+                        chrome.storage.local.remove([storageKey]);
+                        handleFallback();
+                    }
+                } else {
+                    handleFallback();
+                }
             });
-
-            if (!searchConfig) {
-                console.warn(`[SpecialSearch] No config found for hostname: ${hostname}`);
+        } else {
+            handleFallback();
+        }
+        
+        // 降级方案：从 sessionStorage 或 URL 参数读取（兼容旧版本）
+        function handleFallback() {
+            // 尝试从 sessionStorage 读取
+            try {
+                const storedQuery = sessionStorage.getItem('jvmaoQuery');
+                const storedTime = sessionStorage.getItem('jvmaoQueryTime');
+                
+                if (storedQuery && storedTime) {
+                    const timeDiff = Date.now() - parseInt(storedTime, 10);
+                    if (timeDiff < 30000) {
+                        processSearch(storedQuery, url, hostname);
+                        return;
+                    } else {
+                        sessionStorage.removeItem('jvmaoQuery');
+                        sessionStorage.removeItem('jvmaoQueryTime');
+                    }
+                }
+            } catch (e) {
+                // 忽略错误
+            }
+            
+            // 最后尝试从 URL 参数读取（兼容性）
+            const urlQueryParam = url.searchParams.get("jvmaoQuery");
+            if (urlQueryParam) {
+                processSearch(urlQueryParam, url, hostname);
+                return;
+            }
+            
+            isProcessing = false;
+            processedQuery = null;
+        }
+        
+        // 处理搜索的核心函数
+        function processSearch(query, currentUrl, currentHostname) {
+            if (!query) {
                 isProcessing = false;
+                processedQuery = null;
                 return;
             }
 
-            // 开始处理特殊搜索
-            handleSpecialSearch(searchConfig, queryParam, url);
-        });
+            // 如果正在处理相同的query，直接返回
+            if (isProcessing && processedQuery === query) {
+                return;
+            }
+
+            // 标记为正在处理
+            isProcessing = true;
+            processedQuery = query;
+            
+            // 从配置中查找匹配的搜索引擎配置
+            chrome.runtime.sendMessage({
+                type: "getOption",
+            }, (res) => {
+                if (chrome.runtime.lastError) {
+                    isProcessing = false;
+                    return;
+                }
+
+                // 合并内置配置和自定义配置
+                const customkey = res?.customkey || [];
+                const allSearchEngines = [...SoIcon, ...customkey];
+                
+                // 查找匹配的搜索引擎配置
+                const searchConfig = allSearchEngines.find((engine) => {
+                    if (!engine.isSpecialType) return false;
+                    if (!engine.host || !Array.isArray(engine.host)) return false;
+                    return engine.host.includes(currentHostname);
+                });
+
+                if (!searchConfig) {
+                    isProcessing = false;
+                    return;
+                }
+
+                // 开始处理特殊搜索
+                handleSpecialSearch(searchConfig, query, currentUrl);
+            });
+        }
     }, []);
 
     return null;
 };
-
-/**
- * 清理存储的查询内容
- */
-function cleanupStoredQuery() {
-    try {
-        sessionStorage.removeItem('jvmaoQuery');
-        sessionStorage.removeItem('jvmaoQueryTime');
-    } catch (e) {
-        console.warn('[SpecialSearch] Failed to clear sessionStorage:', e);
-    }
-}
 
 /**
  * 处理特殊搜索的核心函数
@@ -115,17 +144,172 @@ function cleanupStoredQuery() {
 function handleSpecialSearch(config, query, url) {
     const {
         inputSelector = "textarea, input[type='text']",
-        delay = 500,
         key, // 搜索引擎的 key，用于特殊处理
     } = config;
 
-    const maxRetries = 3;
-    const retryDelay = 1000; // 每次重试延迟1秒
-    const maxWaitTime = 5000; // 最多等待5秒
+    const maxRetries = 10;
+    const retryDelay = 500;
+    const maxWaitTime = 10000;
     const startTime = Date.now();
 
     // 解析选择器（支持多个，逗号分隔）
     const selectors = inputSelector.split(',').map(s => s.trim());
+
+    /**
+     * 检查页面是否加载完成
+     * @returns {boolean}
+     */
+    function isPageReady() {
+        if (document.readyState === 'complete') {
+            if (!document.body) {
+                return false;
+            }
+            if (document.body.children.length === 0) {
+                return false;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 等待页面加载完成
+     * @returns {Promise<void>}
+     */
+    function waitForPageReady() {
+        return new Promise((resolve) => {
+            // 如果已经加载完成，直接返回
+            if (isPageReady()) {
+                setTimeout(resolve, 300);
+                return;
+            }
+
+            let resolved = false;
+            const timeoutIds = [];
+            let observer = null;
+
+            const cleanup = () => {
+                timeoutIds.forEach(id => clearTimeout(id));
+                timeoutIds.length = 0;
+                if (observer) {
+                    observer.disconnect();
+                    observer = null;
+                }
+            };
+
+            const addTimeout = (callback, delay) => {
+                const id = setTimeout(callback, delay);
+                timeoutIds.push(id);
+                return id;
+            };
+
+            const doResolve = () => {
+                if (resolved) return;
+                resolved = true;
+                cleanup();
+                setTimeout(resolve, 300);
+            };
+
+            const currentState = document.readyState;
+
+            // 如果页面正在加载
+            if (currentState === 'loading') {
+                const onDOMContentLoaded = () => {
+                    if (document.readyState === 'complete') {
+                        if (isPageReady()) {
+                            doResolve();
+                        } else {
+                            waitForPageContent(doResolve);
+                        }
+                    } else {
+                        window.addEventListener('load', () => {
+                            if (isPageReady()) {
+                                doResolve();
+                            } else {
+                                waitForPageContent(doResolve);
+                            }
+                        }, { once: true });
+                        addTimeout(doResolve, 5000);
+                    }
+                };
+
+                document.addEventListener('DOMContentLoaded', onDOMContentLoaded, { once: true });
+                addTimeout(doResolve, 8000);
+            } 
+            // 如果已经在 interactive 状态
+            else if (currentState === 'interactive') {
+                if (document.readyState === 'complete') {
+                    if (isPageReady()) {
+                        doResolve();
+                    } else {
+                        waitForPageContent(doResolve);
+                    }
+                } else {
+                    window.addEventListener('load', () => {
+                        if (isPageReady()) {
+                            doResolve();
+                        } else {
+                            waitForPageContent(doResolve);
+                        }
+                    }, { once: true });
+                    addTimeout(doResolve, 3000);
+                }
+            } 
+            // 如果已经是 complete 状态
+            else if (currentState === 'complete') {
+                waitForPageContent(doResolve);
+            } 
+            // 未知状态
+            else {
+                addTimeout(doResolve, 500);
+            }
+
+            // 辅助函数：等待页面内容加载（适用于SPA场景）
+            function waitForPageContent(callback) {
+                let attempts = 0;
+                const maxAttempts = 20;
+                let checkTimeoutId = null;
+                
+                const checkReady = () => {
+                    attempts++;
+                    if (isPageReady()) {
+                        if (checkTimeoutId) clearTimeout(checkTimeoutId);
+                        callback();
+                        return;
+                    }
+                    if (attempts < maxAttempts) {
+                        checkTimeoutId = setTimeout(checkReady, 300);
+                        timeoutIds.push(checkTimeoutId);
+                    } else {
+                        if (checkTimeoutId) clearTimeout(checkTimeoutId);
+                        callback();
+                    }
+                };
+
+                // 使用 MutationObserver 监听DOM变化
+                if (document.body) {
+                    const mutObserver = new MutationObserver(() => {
+                        if (isPageReady()) {
+                            if (checkTimeoutId) clearTimeout(checkTimeoutId);
+                            mutObserver.disconnect();
+                            callback();
+                        }
+                    });
+                    mutObserver.observe(document.body, {
+                        childList: true,
+                        subtree: true
+                    });
+                    observer = mutObserver;
+                }
+
+                // 同时使用轮询作为兜底
+                checkTimeoutId = setTimeout(checkReady, 300);
+                timeoutIds.push(checkTimeoutId);
+                const finalTimeoutId = setTimeout(callback, 6000);
+                timeoutIds.push(finalTimeoutId);
+            }
+        });
+    }
 
     /**
      * 查找输入框
@@ -138,21 +322,18 @@ function handleSpecialSearch(config, query, url) {
                 if (element) {
                     // 检查是否是标准输入框
                     if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') {
-                        // 检查元素是否可见和可编辑
                         if (element.offsetParent !== null && !element.disabled && !element.readOnly) {
                             return element;
                         }
                     }
                     // 检查是否是 contenteditable 元素
                     else if (element.contentEditable === 'true' || element.getAttribute('contenteditable') === 'true' || element.getAttribute('role') === 'textbox') {
-                        // 检查元素是否可见
                         if (element.offsetParent !== null) {
                             return element;
                         }
                     }
                 }
             } catch (e) {
-                // 选择器无效，继续尝试下一个
                 continue;
             }
         }
@@ -163,16 +344,17 @@ function handleSpecialSearch(config, query, url) {
      * 尝试填入query并触发回车
      * @param {number} retryCount - 当前重试次数
      */
-    function tryFillAndSubmit(retryCount = 0) {
+    async function tryFillAndSubmit(retryCount = 0) {
         // 检查是否超时
         if (Date.now() - startTime > maxWaitTime) {
-            console.warn("[SpecialSearch] Timeout waiting for input element");
-            cleanupUrl(url);
-            cleanupStoredQuery();
-            // 重置处理标志
             isProcessing = false;
             processedQuery = null;
             return;
+        }
+
+        // 等待页面加载完成（仅在第一次或页面未就绪时）
+        if (retryCount === 0 || !isPageReady()) {
+            await waitForPageReady();
         }
 
         const inputElement = findInputElement();
@@ -180,14 +362,10 @@ function handleSpecialSearch(config, query, url) {
         if (!inputElement) {
             // 如果没找到，且还有重试次数，则重试
             if (retryCount < maxRetries) {
-                setTimeout(() => {
-                    tryFillAndSubmit(retryCount + 1);
+                setTimeout(async () => {
+                    await tryFillAndSubmit(retryCount + 1);
                 }, retryDelay);
             } else {
-                console.warn("[SpecialSearch] Input element not found after retries");
-                cleanupUrl(url);
-                cleanupStoredQuery();
-                // 重置处理标志
                 isProcessing = false;
                 processedQuery = null;
             }
@@ -202,15 +380,14 @@ function handleSpecialSearch(config, query, url) {
             
             // 填入query值
             if (isContentEditable) {
-                // 先清空现有内容（对于某些编辑器，需要更彻底地清空）
-                // 删除所有子节点，确保完全清空
+                // 先清空现有内容
                 while (inputElement.firstChild) {
                     inputElement.removeChild(inputElement.firstChild);
                 }
                 inputElement.textContent = '';
                 inputElement.innerText = '';
                 
-                // 对于 contenteditable 元素，先触发 beforeinput 事件（某些编辑器需要）
+                // 触发 beforeinput 事件
                 const beforeInputEvent = new InputEvent('beforeinput', {
                     bubbles: true,
                     cancelable: true,
@@ -219,10 +396,10 @@ function handleSpecialSearch(config, query, url) {
                 });
                 inputElement.dispatchEvent(beforeInputEvent);
                 
-                // 然后设置内容
+                // 设置内容
                 inputElement.textContent = query;
                 
-                // 最后触发 input 事件（contenteditable 元素通常监听这个）
+                // 触发 input 事件
                 const inputEvent = new InputEvent('input', { 
                     bubbles: true, 
                     cancelable: true,
@@ -231,17 +408,14 @@ function handleSpecialSearch(config, query, url) {
                 });
                 inputElement.dispatchEvent(inputEvent);
                 
-                // 兜底检查：如果内容重复（比如 "你好你好"），修正为单次内容
+                // 兜底检查：如果内容重复，修正为单次内容
                 setTimeout(() => {
                     const currentText = inputElement.textContent || inputElement.innerText || '';
-                    // 检查是否完全重复（query + query）
                     if (currentText === query + query) {
-                        // 清空并重新设置
                         while (inputElement.firstChild) {
                             inputElement.removeChild(inputElement.firstChild);
                         }
                         inputElement.textContent = query;
-                        // 触发 input 事件
                         const fixInputEvent = new InputEvent('input', { 
                             bubbles: true, 
                             cancelable: true,
@@ -252,11 +426,11 @@ function handleSpecialSearch(config, query, url) {
                     }
                 }, 150);
             } else {
-                // 对于标准输入框，先清空再设置
+                // 对于标准输入框
                 inputElement.value = '';
                 inputElement.value = query;
                 
-                // 触发input事件，确保页面知道值已改变
+                // 触发input事件
                 const inputEvent = new Event('input', { bubbles: true, cancelable: true });
                 inputElement.dispatchEvent(inputEvent);
                 
@@ -281,7 +455,7 @@ function handleSpecialSearch(config, query, url) {
 
             // 延迟一小段时间后触发回车
             setTimeout(() => {
-                // 尝试触发回车事件
+                // 触发回车事件
                 const enterEvent = new KeyboardEvent('keydown', {
                     key: 'Enter',
                     code: 'Enter',
@@ -302,7 +476,6 @@ function handleSpecialSearch(config, query, url) {
                 });
                 inputElement.dispatchEvent(enterEvent2);
 
-                // 也尝试触发keypress
                 const enterEvent3 = new KeyboardEvent('keypress', {
                     key: 'Enter',
                     code: 'Enter',
@@ -318,7 +491,6 @@ function handleSpecialSearch(config, query, url) {
                     try {
                         inputElement.form.requestSubmit();
                     } catch (e) {
-                        // 如果requestSubmit不支持，尝试submit
                         try {
                             inputElement.form.submit();
                         } catch (e2) {
@@ -327,42 +499,23 @@ function handleSpecialSearch(config, query, url) {
                     }
                 }
 
-                // 清理URL参数和 sessionStorage
-                cleanupUrl(url);
-                cleanupStoredQuery();
                 // 重置处理标志
                 isProcessing = false;
                 processedQuery = null;
             }, 100);
         } catch (error) {
-            console.error("[SpecialSearch] Error filling input:", error);
-            cleanupUrl(url);
-            cleanupStoredQuery();
-            // 重置处理标志
             isProcessing = false;
             processedQuery = null;
         }
     }
 
-    // 延迟指定时间后开始尝试
-    setTimeout(() => {
+    // 等待页面加载完成后开始尝试
+    waitForPageReady().then(() => {
         tryFillAndSubmit();
-    }, delay);
-}
-
-/**
- * 清理URL中的jvmaoQuery参数
- * @param {URL} url - URL对象
- */
-function cleanupUrl(url) {
-    try {
-        url.searchParams.delete("jvmaoQuery");
-        const newUrl = url.toString();
-        // 使用replaceState清除参数，不刷新页面
-        window.history.replaceState({}, '', newUrl);
-    } catch (error) {
-        console.error("[SpecialSearch] Error cleaning URL:", error);
-    }
+    }).catch(() => {
+        isProcessing = false;
+        processedQuery = null;
+    });
 }
 
 export default SpecialSearch;

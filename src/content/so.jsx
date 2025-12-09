@@ -84,14 +84,36 @@ const So = () => {
     const [currentSearchText, setCurrentSearchText] = React.useState(""); // 当前搜索框中的文本
     const [inputSelectors, setInputSelectors] = React.useState({}); // 每个 hostname 对应的搜索框选择器
 
-    // 使用 useMemo 确保 href 在 URL 变化时更新
-    const href = React.useMemo(() => {
+    // 使用 state 确保 href 在 URL 变化时更新
+    const [href, setHref] = React.useState(() => {
         try {
             return new URL(window.location.href);
         } catch (e) {
             console.error("Failed to parse URL:", e);
             return null;
         }
+    });
+
+    // 监听 URL 变化（适用于 SPA 或页面导航）
+    React.useEffect(() => {
+        const updateHref = () => {
+            try {
+                setHref(new URL(window.location.href));
+            } catch (e) {
+                console.error("Failed to parse URL:", e);
+                setHref(null);
+            }
+        };
+
+        // 监听 popstate 事件（浏览器前进/后退）
+        window.addEventListener('popstate', updateHref);
+        
+        // 对于 SPA，可能需要监听其他事件，这里使用 MutationObserver 作为备选
+        // 但更推荐在路由变化时手动触发更新
+        
+        return () => {
+            window.removeEventListener('popstate', updateHref);
+        };
     }, []);
 
     const get_text = React.useCallback(() => {
@@ -251,7 +273,7 @@ const So = () => {
         }
     }, [href])
 
-    if (loading) {
+    if (loading || !soList || soList.length === 0) {
         return null;
     }
 
@@ -297,7 +319,7 @@ const So = () => {
                                     console.error("Error opening URL:", error);
                                 }
                             }}
-                            style={{ "--jvmao-net-scale": (Array.isArray(n) && n[k] !== undefined) ? n[k] : 1 }}
+                            // style={{ "--jvmao-net-scale": (Array.isArray(n) && n[k] !== undefined) ? n[k] : 1 }}
                         >
                             <Tooltip placement="right" title={item.name} >
                                 {item.icon ? item.icon : <div><FavIconIcon size={80} url={item.url} onlyDomain /></div>}

@@ -54,7 +54,25 @@ const SearchMenu = (props) => {
   useKeyPress(
     key,
     (event) => {
-      setState(List[event.key - 1].key);
+      // 阻止默认行为，防止字符被输入到输入框
+      event.preventDefault();
+      event.stopPropagation();
+      
+      // 从事件中提取数字键的索引
+      // event.code: "Digit1", "Digit2", ... -> 索引 0, 1, ...
+      // event.key: "1", "2", ... -> 索引 0, 1, ...
+      let keyIndex = -1;
+      if (event.code && event.code.startsWith('Digit')) {
+        const digit = Number(event.code.replace('Digit', ''));
+        keyIndex = digit - 1; // Digit1 -> 0, Digit2 -> 1, ...
+      } else if (event.key && /^\d$/.test(event.key)) {
+        keyIndex = Number(event.key) - 1; // "1" -> 0, "2" -> 1, ...
+      }
+      
+      // 确保索引有效且对应的列表项存在
+      if (keyIndex >= 0 && keyIndex < List.length && List[keyIndex]) {
+        setState(List[keyIndex].key);
+      }
     },
     {
       exactMatch: true,
@@ -76,17 +94,20 @@ const SearchMenu = (props) => {
 
   const soMenu = useCreation(() => {
     return List.map((item, index) => {
+      if (!item || !item.key) {
+        return null;
+      }
       return {
-        key: item?.key,
+        key: item.key,
         label: (
           <MenuItemWrap>
-            <span>{item.name}</span>
+            <span>{item.name || ''}</span>
             {index < 9 ? <i>Alt + {index + 1}</i> : null}
           </MenuItemWrap>
         ),
         icon: item.icon ? item.icon : <FavIconIcon size={24} url={item?.url} style={{ marginRight: 8 }} onlyDomain />,
       };
-    });
+    }).filter(Boolean); // 过滤掉 null 项
   }, [List]);
 
   const SelectIcon = useCreation(() => {

@@ -25,7 +25,7 @@ const UpdateRecords = () => {
             <h2>更新日志</h2>
             <ul className="scroll-container">
                 <li>
-                    <span>1.2.12</span>
+                    <span>1.3.0</span>
                     <ul>
                         <li>新增: 支持豆包、元宝、DeepSeek等直接从搜索发起</li>
                         <li>优化: 搜索框选择器功能，支持特殊类型搜索引擎的自动填入和搜索触发</li>

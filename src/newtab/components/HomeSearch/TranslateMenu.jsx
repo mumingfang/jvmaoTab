@@ -46,7 +46,7 @@ const TranslateMenu = (props) => {
   const List = useCreation(() => {
     return (translateList || []).map((name) => {
       return TranslateIcon.find((v) => v.name === name);
-    });
+    }).filter(Boolean); // 过滤掉 undefined 项
   }, [TranslateIcon]);
 
   const key = useCreation(() => {
@@ -55,13 +55,28 @@ const TranslateMenu = (props) => {
     });
   }, [List]);
 
-  useKeyPress(key, (event) => {
-
-    setState(List[shiftKey[event.code]]?.name);
-  });
+  useKeyPress(
+    key,
+    (event) => {
+      // 阻止默认行为，防止字符被输入到输入框
+      event.preventDefault();
+      event.stopPropagation();
+      
+      const index = shiftKey[event.code];
+      if (index !== undefined && List[index] && List[index].name) {
+        setState(List[index].name);
+      }
+    },
+    {
+      exactMatch: true,
+    }
+  );
 
   const menu = useCreation(() => {
     return List.map((item, index) => {
+      if (!item || !item.name) {
+        return null;
+      }
       return {
         key: item.name,
         label: (
@@ -72,7 +87,7 @@ const TranslateMenu = (props) => {
         ),
         icon: item.icon,
       };
-    });
+    }).filter(Boolean); // 过滤掉 null 项
   }, [List]);
 
   return (
@@ -91,7 +106,7 @@ const TranslateMenu = (props) => {
         <Button
           type="text"
           shape="circle"
-          icon={List.find((v) => v.name === state)?.icon}
+          icon={List.find((v) => v?.name === state)?.icon}
         />
       </Tooltip>
 

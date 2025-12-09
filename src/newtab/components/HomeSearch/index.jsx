@@ -117,16 +117,46 @@ const HomeSearch = (props) => {
         setInputValue("");
         let searchUrl;
         // 检测是否为特殊类型搜索引擎
-        if (activeSoItem.isSpecialType && activeSoItem.baseUrl && activeSoItem.queryParam) {
-          // 特殊类型：使用 baseUrl + queryParam
-          // 同时将查询内容存储到 sessionStorage，防止 URL 参数被清除
+        if (activeSoItem.isSpecialType && activeSoItem.baseUrl) {
+          // 特殊类型：使用 chrome.storage.local 存储查询内容
           try {
-            sessionStorage.setItem('jvmaoQuery', search);
-            sessionStorage.setItem('jvmaoQueryTime', Date.now().toString());
+            const baseUrlObj = new URL(activeSoItem.baseUrl);
+            const hostname = baseUrlObj.hostname;
+            const storageKey = `jvmaoQuery_${hostname}`;
+            const queryData = {
+              query: search,
+              timestamp: Date.now(),
+              hostname: hostname
+            };
+            
+            // 使用 chrome.storage.local 存储
+            if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+              chrome.storage.local.set({ [storageKey]: queryData }, () => {
+                if (chrome.runtime.lastError) {
+                  // 降级：使用 sessionStorage
+                  try {
+                    sessionStorage.setItem('jvmaoQuery', search);
+                    sessionStorage.setItem('jvmaoQueryTime', Date.now().toString());
+                  } catch (e) {
+                    // 忽略错误
+                  }
+                }
+              });
+            } else {
+              // 降级：如果 chrome API 不可用，使用 sessionStorage
+              try {
+                sessionStorage.setItem('jvmaoQuery', search);
+                sessionStorage.setItem('jvmaoQueryTime', Date.now().toString());
+              } catch (e) {
+                // 忽略错误
+              }
+            }
           } catch (e) {
-            console.warn('[HomeSearch] Failed to set sessionStorage:', e);
+            // 忽略错误
           }
-          searchUrl = `${activeSoItem.baseUrl}?${activeSoItem.queryParam}=${encodeURIComponent(search)}`;
+          
+          // 直接使用 baseUrl，不需要 URL 参数
+          searchUrl = activeSoItem.baseUrl;
         } else {
           // 传统类型：保持原有逻辑
           searchUrl = `${activeSoItem.url}${encodeURIComponent(search)}`;
@@ -147,6 +177,8 @@ const HomeSearch = (props) => {
       return;
     }
     state.open = false;
+    state.options = [];
+    state.selectedIndex = -1; // 重置选中索引
   }, [soList, option.item.activeSo, linkOpenSelf]);
 
   const goToTranslate = useMemoizedFn((search) => {
@@ -155,9 +187,15 @@ const HomeSearch = (props) => {
       (v) => v.name === option.item.activeTranslate
     );
     if (translateItem?.url) {
-      window.open(`${translateItem.url}${search}`);
+      // 对搜索文本进行 URL 编码
+      const encodedSearch = encodeURIComponent(search);
+      window.open(`${translateItem.url}${encodedSearch}`);
+      state.options = [];
       state.open = false;
+      state.selectedIndex = -1; // 重置选中索引
+      setInputValue("");
     }
+
   }, [option.item.activeTranslate]);
 
   const onSelect = useMemoizedFn((data, option) => {
@@ -379,9 +417,50 @@ const HomeSearch = (props) => {
     }
   );
 
-  useKeyPress(["alt.enter"], () => {
-    goToTranslate(inputValue);
-  });
+  // Alt+回车 处理：作为备用处理（主要处理在 Input 的 onKeyDown 中）
+  // 如果 Input 的 onKeyDown 没有捕获到事件（比如输入框没有焦点），这里会处理
+  useKeyPress(
+    ["alt.enter"],
+    (e) => {
+      // 确保 Alt+回车 功能正常工作
+      e.preventDefault();
+      e.stopPropagation();
+      // 确保有输入内容时才执行翻译
+      if (inputValue && inputValue.trim()) {
+        goToTranslate(inputValue);
+      }
+    },
+    {
+      exactMatch: true,
+    }
+  );
+
+  // 阻止 Alt+1-9 的默认行为，防止字符被输入到输入框
+  // 实际的切换逻辑在 SearchMenu 组件中处理
+  // 注意：只阻止默认行为，不阻止事件传播，让 SearchMenu 中的处理也能正常工作
+  useKeyPress(
+    ["alt.1", "alt.2", "alt.3", "alt.4", "alt.5", "alt.6", "alt.7", "alt.8", "alt.9"],
+    (e) => {
+      e.preventDefault();
+      // 不调用 stopPropagation，让事件继续传播到 SearchMenu
+    },
+    {
+      exactMatch: true,
+    }
+  );
+
+  // 阻止 Alt+Shift+1-9 的默认行为，防止字符被输入到输入框
+  // 实际的切换逻辑在 TranslateMenu 组件中处理
+  useKeyPress(
+    ["shift.alt.1", "shift.alt.2", "shift.alt.3", "shift.alt.4", "shift.alt.5", "shift.alt.6", "shift.alt.7", "shift.alt.8", "shift.alt.9"],
+    (e) => {
+      e.preventDefault();
+      // 不调用 stopPropagation，让事件继续传播到 TranslateMenu
+    },
+    {
+      exactMatch: true,
+    }
+  );
 
   useKeyPress(
     "tab",
@@ -553,7 +632,25 @@ const HomeSearch = (props) => {
             onChange={onChange}
             onFocus={() => { setInputFocus(true); s.focus = true }}
             onBlur={() => { setInputFocus(false); s.focus = false }}
-
+            onKeyDown={(e) => {
+              // 处理 Alt+回车：直接在这里处理，确保事件被捕获
+              if (e.altKey && e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                if (inputValue && inputValue.trim()) {
+                  goToTranslate(inputValue);
+                }
+                return;
+              }
+              // 阻止 Alt+1-9 的默认行为，防止字符被输入到输入框
+              if (e.altKey && !e.shiftKey && /^[1-9]$/.test(e.key)) {
+                e.preventDefault();
+              }
+              // 阻止 Alt+Shift+1-9 的默认行为，防止字符被输入到输入框
+              if (e.altKey && e.shiftKey && /^[1-9]$/.test(e.key)) {
+                e.preventDefault();
+              }
+            }}
           />
         </SearchInput>
         <Divider type="vertical" />
