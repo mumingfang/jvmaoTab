@@ -27,7 +27,10 @@ const AddNote = (props) => {
                     note.delectNote(note.openId).then(() => {
                         refresh();
                         note.openId = 0;
-                    })
+                    }).catch((err) => {
+                        console.error("删除空便签失败:", err);
+                        tools.error('删除便签失败');
+                    });
                 }
             } else {
                 const html = editor.getHTML();
@@ -36,19 +39,28 @@ const AddNote = (props) => {
                         content: html
                     }).then(() => {
                         debouncedRun();
-                    })
+                    }).catch((err) => {
+                        console.error("更新便签失败:", err);
+                        tools.error('更新便签失败');
+                    });
                 } else if (note.openId === 0) {
                     note.addNote({
                         content: html,
                         state: noteType
                     }).then((res) => {
-                        note.open(res);
+                        if (res != null) {
+                            note.open(res);
+                        }
                         refresh();
-                    })
+                    }).catch((err) => {
+                        console.error("添加便签失败:", err);
+                        tools.error('添加便签失败');
+                    });
                 }
             }
         } catch (error) {
-            console.log('%c [ error ]-52', 'font-size:13px; background:pink; color:#bf2c9f;', error)
+            console.error("编辑器事件处理失败:", error);
+            tools.error('操作失败，请重试');
         }
     });
 
@@ -56,19 +68,23 @@ const AddNote = (props) => {
         if (note.openId > 0) {
             note.findNote(note.openId).then((res) => {
                 if (res) {
-                    setText(res.content);
+                    setText(res.content || '');
+                } else {
+                    setText('');
                 }
             }).catch((err) => {
                 if (err.name === "DatabaseClosedError") {
                     window.location.reload();
+                    return;
                 }
                 tools.error('获取便签失败');
                 console.error("findNote", err);
-            })
+                setText('');
+            });
         } else if (note.openId === 0) {
             setText('');
         }
-    }, [note.openId])
+    }, [note.openId, note, tools])
 
     return (
         <Warp >

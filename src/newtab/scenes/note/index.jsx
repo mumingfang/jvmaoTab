@@ -8,7 +8,7 @@ import AddNote from "~/scenes/note/addNote";
 import TextOnlyComponent from "~/components/TextOnlyComponent";
 import { headerHeight } from "~/view/Home";
 import { IconTrashX, IconEditCircle, IconSelect, IconX, IconDeviceDesktop, IconDeviceDesktopX } from "@tabler/icons-react";
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import dayjs from 'dayjs'
 import { lighten } from 'polished';
 
@@ -143,16 +143,19 @@ const BtnDel = styled(Button)`
     align-items: center;
 `;
 
-// 假设屏幕宽高
-const screenWidth = window.innerWidth;
-const screenHeight = window.innerHeight;
 // 新div的大小
 const divWidth = 240;
 const divHeight = 240;
 
 // 检查新div的位置是否与现有div重叠
 function checkOverlap(newLeft, newTop, existingDivs) {
+    if (!Array.isArray(existingDivs)) {
+        return false;
+    }
     return existingDivs.some(div => {
+        if (!div || typeof div.left !== 'number' || typeof div.top !== 'number') {
+            return false;
+        }
         return newLeft < div.left + divWidth &&
             newLeft + divWidth > div.left &&
             newTop < div.top + divHeight &&
@@ -162,9 +165,15 @@ function checkOverlap(newLeft, newTop, existingDivs) {
 
 // 寻找新div的位置
 function findPositionForNewDiv(existingDivs, startLeft = 70, startTop = 70) {
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
     let left = startLeft;
     let top = startTop;
-    while (true) {
+    const maxIterations = Math.ceil((screenWidth / divWidth) * (screenHeight / divHeight)) + 100;
+    let iterations = 0;
+    
+    while (iterations < maxIterations) {
+        iterations++;
         if (!checkOverlap(left, top, existingDivs)) {
             if (left + divWidth <= screenWidth && top + divHeight <= screenHeight) {
                 return { left, top };
@@ -179,10 +188,13 @@ function findPositionForNewDiv(existingDivs, startLeft = 70, startTop = 70) {
             throw new Error("没有足够的空间放置新的div");
         }
     }
+    
+    // 如果达到最大迭代次数仍未找到位置，抛出错误
+    throw new Error("无法找到合适的位置放置新的div，请尝试移除一些便签");
 }
 
 const NoteHome = (props) => {
-    const { tools, note, option, home } = useStores();
+    const { tools, note, option } = useStores();
     const { token } = useToken();
     const [selectOpen, setSelectOpen] = React.useState(false);
     const [stickyIds, setStickyIds] = React.useState([]);
@@ -193,45 +205,54 @@ const NoteHome = (props) => {
 
     const getNote = useMemoizedFn(() => {
         return note.getNote(1, 9999, noteType).then((res) => {
-            return res.list;
-        })
-    }, [noteType]);
+            return res?.list || [];
+        }).catch((err) => {
+            console.error("获取便签列表失败:", err);
+            tools.error('获取便签列表失败');
+            return [];
+        });
+    }, [noteType, note, tools]);
 
     const { data, error, refresh, run } = useRequest(getNote, {
         manual: true,
     });
 
     const onEdit = useMemoizedFn((id) => {
-        note.open(id);
-    }, []);
+        if (id != null) {
+            note.open(id);
+        }
+    }, [note]);
 
     const onDelete = useMemoizedFn((ids) => {
+        if (!ids || (Array.isArray(ids) && ids.length === 0)) {
+            return;
+        }
         note.delectNote(ids).then(() => {
             refresh();
             note.openId = -1;
             if (selectOpen) {
                 setSelectOpen(false);
             }
-        })
-    }, [selectOpen])
+        }).catch((err) => {
+            console.error("删除便签失败:", err);
+            tools.error('删除便签失败');
+        });
+    }, [selectOpen, note, refresh, tools])
 
-    const upadteIds = useMemoizedFn(() => {
+    const updateIds = useMemoizedFn(() => {
         const { homeNoteData } = option.item;
-        const ids = homeNoteData?.map((v) => v.id) || [];
+        const ids = (homeNoteData || []).map((v) => v?.id).filter(id => id != null) || [];
         setStickyIds(ids);
-    }, [])
+    }, [option])
 
     const originalList = React.useMemo(() => {
-        if (typeof data !== 'undefined' && !data?.length && !error && note.openId != 0) {
-            // setTimeout(() => {
-            //     note.open(0);
-            // }, 50);
-        }
-        return Array.from(data || [])
+        return Array.from(data || []);
     }, [data]);
 
 
-    const selectList = React.useMemo(() => (data || []).map((v) => v.id), [data]);
+    const selectList = React.useMemo(() => {
+        return (data || []).map((v) => v?.id).filter(id => id != null);
+    }, [data]);
 
     const [list] = useVirtualList(originalList, {
         containerTarget: containerRef,
@@ -243,6 +264,7 @@ const NoteHome = (props) => {
     const { selected, allSelected, isSelected, toggle, toggleAll, partiallySelected } = useSelections(selectList);
 
     const onContextMenu = React.useCallback((e, id) => {
+        if (!id) return;
         e.stopPropagation();
         e.preventDefault();
         const isSticky = stickyIds?.includes(id);
@@ -257,15 +279,16 @@ const NoteHome = (props) => {
                     } else {
                         try {
                             const { homeNoteData } = option.item;
-                            const newDivPosition = findPositionForNewDiv(homeNoteData);
+                            const newDivPosition = findPositionForNewDiv(homeNoteData || []);
                             note.addSticky({ id, left: newDivPosition.left, top: newDivPosition.top });
                         } catch (error) {
-                            console.error(error.message);
+                            console.error("添加便签到首屏失败:", error);
+                            tools.error(error.message || '添加便签到首屏失败');
                         }
                     }
 
                     setTimeout(() => {
-                        upadteIds();
+                        updateIds();
                     }, 200);
                 },
             },
@@ -278,38 +301,43 @@ const NoteHome = (props) => {
                 },
             },
         ]);
-    }, [stickyIds]);
+    }, [stickyIds, tools, note, option, updateIds, onDelete]);
 
     useUpdateEffect(() => {
-        // console.log('%c XJ - [ list ]-287-「index.jsx」', 'font-size:13px; background:#f8f53d; color:#000;',);
         if (note.openId == -1) {
-            if (list?.length) {
-                note.open(list[0]?.data?.id);
+            if (list?.length && list[0]?.data?.id != null) {
+                note.open(list[0].data.id);
             } else {
                 note.open(0);
             }
         }
-    }, [list]);
+    }, [list, note]);
 
     useUpdateEffect(() => {
         run();
-        upadteIds();
-    }, [noteType])
+        updateIds();
+    }, [noteType, run, updateIds])
 
     React.useEffect(() => {
         if (note.activeTabKey) {
-            const id = `${note.activeTabKey}`.split('_')[1];
-            setNoteType(Number(id));
-            note.open(-1);
+            const parts = `${note.activeTabKey}`.split('_');
+            if (parts.length >= 2) {
+                const id = parts[1];
+                const numId = Number(id);
+                if (!isNaN(numId)) {
+                    setNoteType(numId);
+                    note.open(-1);
+                }
+            }
         }
-    }, [note.activeTabKey]);
+    }, [note.activeTabKey, note]);
 
     useDebounceEffect(
         () => {
             note.open();
             setTimeout(() => {
                 refresh();
-                upadteIds();
+                updateIds();
             }, 0);
         },
         [tools.timeKey],
@@ -325,7 +353,7 @@ const NoteHome = (props) => {
                     <div className="left">
                         {selectOpen ? (
                             <Space>
-                                <Checkbox checked={allSelected} onClick={toggleAll} indeterminate={partiallySelected} tabindex="-1">
+                                <Checkbox checked={allSelected} onClick={toggleAll} indeterminate={partiallySelected} tabIndex={-1}>
                                     全选
                                 </Checkbox>
                                 <Popconfirm
@@ -336,19 +364,19 @@ const NoteHome = (props) => {
                                     cancelText="取消"
                                     disabled={selected.length === 0}
                                 >
-                                    <BtnSelectItem tabindex="-1" danger disabled={selected.length === 0} size="small" icon={<IconTrashX size={16} stroke={1.4} />} >删除</BtnSelectItem>
+                                    <BtnSelectItem tabIndex={-1} danger disabled={selected.length === 0} size="small" icon={<IconTrashX size={16} stroke={1.4} />} >删除</BtnSelectItem>
                                 </Popconfirm>
-                                <BtnSelectItem tabindex="-1" size="small" icon={<IconX size={16} stroke={1.4} />} onClick={() => setSelectOpen(false)}>取消</BtnSelectItem>
+                                <BtnSelectItem tabIndex={-1} size="small" icon={<IconX size={16} stroke={1.4} />} onClick={() => setSelectOpen(false)}>取消</BtnSelectItem>
                             </Space>
                         ) : (
                             <Tooltip placement="top" title={"批量删除"}>
-                                <BtnSelect tabindex="-1" type="link" disabled={selectList.length === 0} icon={<IconSelect size={18} stroke={1.4} />} onClick={() => setSelectOpen(true)}></BtnSelect>
+                                <BtnSelect tabIndex={-1} type="link" disabled={selectList.length === 0} icon={<IconSelect size={18} stroke={1.4} />} onClick={() => setSelectOpen(true)}></BtnSelect>
                             </Tooltip>
                         )}
                     </div>
                     <div className="right">
                         <Tooltip placement="top" title={"新增便签"}>
-                            <BtnAdd tabindex="-1" icon={<IconEditCircle size={18} stroke={1.4} />} onClick={() => { note.open(0) }}></BtnAdd>
+                            <BtnAdd tabIndex={-1} icon={<IconEditCircle size={18} stroke={1.4} />} onClick={() => { note.open(0) }}></BtnAdd>
                         </Tooltip>
                     </div>
                 </ListHeader>
@@ -368,31 +396,35 @@ const NoteHome = (props) => {
                                 </div>
                             </Item>
                         ) : null}
-                        {(list || []).map((v, k) => (
-                            <Item
-                                key={v.data?.id}
-                                onClick={() => onEdit(v.data?.id)}
-                                className={v.data?.id === note.openId ? 'active' : ''}
-                                colorPrimaryBg={token.colorPrimaryBg}
-                                colorPrimary={token.colorPrimary}
-                                onContextMenu={(e) => onContextMenu(e, v.data?.id)}
-                            >
-                                <div className="left">
-                                    {selectOpen ? <Checkbox checked={isSelected(v.data?.id)} onClick={() => toggle(v.data?.id)} /> : null}
-                                </div>
-                                <div className="right">
-                                    <ItemHeader>
-                                        <time>{dayjs(v.data?.updateTime).format('YYYY年MM月DD日 HH:mm')}</time>
-                                    </ItemHeader>
-                                    <ItemContent ellipsis><TextOnlyComponent content={v.data?.content} /></ItemContent>
-                                    {stickyIds.includes(v.data?.id) ? (
-                                        <div className="sticky">
-                                            <IconDeviceDesktop size={14} stroke={1.8} />
-                                        </div>
-                                    ) : null}
-                                </div>
-                            </Item>
-                        ))}
+                        {(list || []).map((v) => {
+                            const itemId = v.data?.id;
+                            if (itemId == null) return null;
+                            return (
+                                <Item
+                                    key={itemId}
+                                    onClick={() => onEdit(itemId)}
+                                    className={itemId === note.openId ? 'active' : ''}
+                                    colorPrimaryBg={token.colorPrimaryBg}
+                                    colorPrimary={token.colorPrimary}
+                                    onContextMenu={(e) => onContextMenu(e, itemId)}
+                                >
+                                    <div className="left">
+                                        {selectOpen ? <Checkbox checked={isSelected(itemId)} onClick={() => toggle(itemId)} /> : null}
+                                    </div>
+                                    <div className="right">
+                                        <ItemHeader>
+                                            <time>{v.data?.updateTime ? dayjs(v.data.updateTime).format('YYYY年MM月DD日 HH:mm') : ''}</time>
+                                        </ItemHeader>
+                                        <ItemContent ellipsis><TextOnlyComponent content={v.data?.content || ''} /></ItemContent>
+                                        {stickyIds.includes(itemId) ? (
+                                            <div className="sticky">
+                                                <IconDeviceDesktop size={14} stroke={1.8} />
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                </Item>
+                            );
+                        })}
                     </div>
                 </Container>
             </Left>
@@ -407,7 +439,7 @@ const NoteHome = (props) => {
                             cancelText="取消"
                         >
                             <Tooltip placement="top" title={"删除便签"}>
-                                <BtnDel tabindex="-1" danger type="text" icon={<IconTrashX size={20} stroke={1.4} />}></BtnDel>
+                                <BtnDel tabIndex={-1} danger type="text" icon={<IconTrashX size={20} stroke={1.4} />}></BtnDel>
                             </Tooltip>
                         </Popconfirm>
                     ) : null}

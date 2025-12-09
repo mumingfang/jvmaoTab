@@ -17,14 +17,18 @@ const PreferencesBG = () => {
     const { bgType, bgUrl, bgBase64, bg2Type, bg2Url, bg2Base64, bgColor } = option.item;
 
     const handleChange = (value) => {
-        console.log('%c [ value ]-21', 'font-size:13px; background:pink; color:#bf2c9f;', value)
+        if (!value || typeof value !== 'object') {
+            return;
+        }
         for (const key in value) {
             if (Object.hasOwnProperty.call(value, key)) {
                 let v = value[key];
 
                 switch (key) {
                     case 'bgColor':
-                        v = v.toHexString();
+                        if (v && typeof v.toHexString === 'function') {
+                            v = v.toHexString();
+                        }
                         break;
                     // case 'bgBase64':
                     // case 'bg2Base64':
@@ -37,7 +41,9 @@ const PreferencesBG = () => {
             }
         }
         setTimeout(() => {
-            home.onLoadBg();
+            if (home && typeof home.onLoadBg === 'function') {
+                home.onLoadBg();
+            }
         }, 200)
     };
 

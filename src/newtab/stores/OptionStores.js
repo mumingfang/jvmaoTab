@@ -22,7 +22,7 @@ const updateOptions = {
   },
   2: {
     homeId: getID(),
-    soList: ["Google", "Baidu", "Bing", "DuckDuckGo", 'Bilibili'],
+    soList: ["Google", "Baidu", "Bing", "DuckDuckGo", 'Bilibili', "Yuanbao", "DeepSeek", "Doubao"],
     activeSo: "Google",
     translateList: ["Google", "Baidu", "DeepL"],
     activeTranslate: "Google",

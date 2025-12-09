@@ -270,3 +270,64 @@ export function downloadBlob(blob, filename) {
   document.body.removeChild(downloadLink);
   URL.revokeObjectURL(blobUrl);
 }
+
+// 检测URL是否为特殊协议（浏览器内置页面）
+export function isSpecialProtocol(url) {
+  if (!url || typeof url !== 'string') {
+    return false;
+  }
+  // 检测特殊协议：chrome://, edge://, about:, moz-extension:// 等
+  const specialProtocols = /^(chrome|edge|about|moz-extension|chrome-extension):/i;
+  return specialProtocols.test(url.trim());
+}
+
+// 打开URL，自动处理特殊协议
+export function openUrl(url, options = {}) {
+  if (!url) {
+    return;
+  }
+
+  const { newTab = false, linkOpenSelf = false } = options;
+
+  // 如果是特殊协议，使用 chrome.tabs API
+  if (isSpecialProtocol(url)) {
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
+      // 如果newTab为true（Cmd+点击或中键点击），或者linkOpenSelf为false，创建新标签页
+      if (newTab || !linkOpenSelf) {
+        chrome.tabs.create({
+          url: url,
+          active: true
+        }, () => {
+          // 处理可能的错误
+          if (chrome.runtime.lastError) {
+            console.error('Failed to open URL:', chrome.runtime.lastError);
+          }
+        });
+      } else {
+        // 在当前标签页打开
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs[0]) {
+            chrome.tabs.update(tabs[0].id, {
+              url: url
+            }, () => {
+              if (chrome.runtime.lastError) {
+                console.error('Failed to update tab:', chrome.runtime.lastError);
+              }
+            });
+          }
+        });
+      }
+    } else {
+      // 降级处理：如果chrome API不可用，尝试window.open
+      window.open(url, '_blank');
+    }
+    return;
+  }
+
+  // 普通URL使用常规方法
+  if (newTab || !linkOpenSelf) {
+    window.open(url, '_blank');
+  } else {
+    window.location.href = url;
+  }
+}

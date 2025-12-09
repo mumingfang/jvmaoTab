@@ -53,10 +53,8 @@ const saveLActiveCache = (e) => {
   Storage.set('navActive', {
     type: e.type,
     _key: e.key
-  }).then(() => {
-
   }).catch((err) => {
-    console.log('%c [ err ]-196', 'font-size:13px; background:pink; color:#bf2c9f;', err)
+    console.error('Failed to save nav active cache:', err);
   })
 }
 
@@ -151,7 +149,7 @@ const Nav = (props) => {
         link.setActiveId(timeKey);
       }
     },
-    [state.activeKey]
+    [link]
   );
 
   const onNoteTitleClick = useMemoizedFn(
@@ -161,7 +159,7 @@ const Nav = (props) => {
         note.updateActiveTabKey(key);
       }
     },
-    [state.activeKey]
+    [note]
   );
 
   const foo = useCreation(() => {
@@ -254,10 +252,9 @@ const Nav = (props) => {
       }
     }
 
-  }, [linkOpenSelf]);
+  }, [linkOpenSelf, navigate, onLinkTitleClick, onNoteTitleClick, tools]);
 
   const onContextMenu = useMemoizedFn((e, props) => {
-    console.log('%c XJ - [ props ]-237-「Nav.jsx」', 'font-size:13px; background:#f8f53d; color:#000;', props);
     e.stopPropagation();
     e.preventDefault();
     const menuArr = [];
@@ -268,7 +265,6 @@ const Nav = (props) => {
         key: "edit-link",
         icon: <IconPencilMinus />,
         onClick: () => {
-          console.log("[ title ] >", props);
           tools.openPublicModal(
             "EditLink",
             {
@@ -299,21 +295,20 @@ const Nav = (props) => {
         icon: <IconTrashX />,
         key: "del-link",
         onClick: () => {
-          const link_nav = foo.filter((v) => v.type == "link");
+          const link_nav = foo ? foo.filter((v) => v && v.type == "link") : [];
 
-          if (props._info.hide) {
+          if (props._info && props._info.hide) {
             tools.messageApi.warning('暗格无法删除')
             return
           }
 
-          if (link_nav.length == 1) {
+          if (!link_nav || link_nav.length <= 1) {
             tools.messageApi.warning('请至少保留一个页面')
             return
           }
 
           link.getLinkByParentId(props.key).then((res) => {
-
-            if (res.length) {
+            if (res && Array.isArray(res) && res.length) {
               tools.messageApi.warning('请先清空页面下的所有链接和分组')
               return
             }
@@ -327,8 +322,13 @@ const Nav = (props) => {
               } else {
                 link.updateNav();
               }
-
+            }).catch((err) => {
+              console.error('Failed to delete link:', err);
+              tools.messageApi.error('删除失败');
             });
+          }).catch((err) => {
+            console.error('Failed to get link by parent id:', err);
+            tools.messageApi.error('获取链接信息失败');
           });
         },
       });
@@ -337,13 +337,18 @@ const Nav = (props) => {
         key: "new-link",
         icon: <IconFolderPlus />,
         onClick: () => {
-          link.addLink({
-            parentId: link.linkNav[link.linkNav.length - 1].parentId,
-            title: '新抽屉',
-            timeKey: getID()
-          }).then((res) => {
-            link.updateNav();
-          })
+          if (link.linkNav && link.linkNav.length > 0) {
+            link.addLink({
+              parentId: link.linkNav[link.linkNav.length - 1].parentId,
+              title: '新抽屉',
+              timeKey: getID()
+            }).then((res) => {
+              link.updateNav();
+            }).catch((err) => {
+              console.error('Failed to add link:', err);
+              tools.messageApi.error('添加失败');
+            });
+          }
         }
       });
     } else if (props.type == "note") {
@@ -381,15 +386,15 @@ const Nav = (props) => {
     }
 
     tools.setRightClickEvent(e, menuArr);
-  }, [link.linkNav]);
+  }, [link, tools, foo]);
 
   React.useEffect(() => {
     if (!state.activeKey) {
-      if (link.linkNav[0]?.timeKey) {
+      if (link.linkNav && link.linkNav.length > 0 && link.linkNav[0]?.timeKey) {
         state.activeKey = link.linkNav[0].timeKey;
       }
     }
-  }, [link.linkNav, state.openKeys]);
+  }, [link.linkNav]);
 
   React.useEffect(() => {
     Storage.get('navActive').then((e) => {
@@ -398,11 +403,11 @@ const Nav = (props) => {
           onClick({
             type: e.type,
             key: e._key
-          }, false);
+          });
         }, 100);
       }
     });
-  }, []);
+  }, [onClick]);
 
   return (
     <NavWrap headerHeight={headerHeight}>

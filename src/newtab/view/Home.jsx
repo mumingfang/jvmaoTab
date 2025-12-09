@@ -6,7 +6,6 @@ import {
   useScroll,
   useReactive,
   useMemoizedFn,
-  useWhyDidYouUpdate,
   useHover,
   useKeyPress,
 } from "ahooks";
@@ -195,7 +194,7 @@ const Home = (props) => {
     return () => {
       window.removeEventListener("wheel", onwheel);
     };
-  }, []);
+  }, [onwheel]);
 
   return (
     <Wrap className="main-wrap sn-bg-wrap">

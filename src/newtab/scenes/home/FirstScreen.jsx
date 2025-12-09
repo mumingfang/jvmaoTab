@@ -250,7 +250,7 @@ const FirstScreen = (props) => {
         searchWrapController.start("center");
       });
     }
-  }, [unlock])
+  }, [unlock, searchWrapController])
 
 
   const bgImg = useCreation(() => {
@@ -304,13 +304,13 @@ const FirstScreen = (props) => {
       </FirstScreenImgBg>
     )
 
-  }, [bgType, bgColor, home.bgUrl, home.bgUrl, home.isBg2, unlock, home.bgThumbnailUrl])
+  }, [bgType, bgColor, home.bgUrl, home.bg2Url, home.isBg2, unlock, home.bgThumbnailUrl])
 
   React.useEffect(() => {
     if (!home.bgUrl) {
       home.onLoadBg();
     }
-  }, [home.bgUrl]);
+  }, [home]);
 
   useUpdateEffect(() => {
     if (unlock) {
@@ -340,15 +340,22 @@ const FirstScreen = (props) => {
   React.useEffect(() => {
     if (!unlock && homeLinkTimeKey && !home.isBg2) {
       link.getLinkByParentId(homeLinkTimeKey).then((res) => {
-        const list = res.sort((a, b) => {
-          return a.sort - b.sort;
-        });
-        setHomeLink(_.take(list, homeLinkMaxNum));
-      })
+        if (res && Array.isArray(res)) {
+          const list = res.sort((a, b) => {
+            return a.sort - b.sort;
+          });
+          setHomeLink(_.take(list, homeLinkMaxNum));
+        } else {
+          setHomeLink([]);
+        }
+      }).catch((err) => {
+        console.error('Failed to load home links:', err);
+        setHomeLink([]);
+      });
     } else {
       setHomeLink([]);
     }
-  }, [homeLinkTimeKey, unlock, home.isBg2, homeLinkMaxNum, tools.timeKey])
+  }, [homeLinkTimeKey, unlock, home.isBg2, homeLinkMaxNum, link])
 
   React.useEffect(() => {
     if (home.isBg2) {
@@ -458,10 +465,13 @@ const FirstScreen = (props) => {
       >
         <HomeSearch stickled={unlock} />
       </SearchWrap>
-      {homeLinkTimeKey && homeLink?.length ? (
+      {homeLinkTimeKey && homeLink && Array.isArray(homeLink) && homeLink.length > 0 ? (
         <HomeLinkNav isSoBarDown={isSoBarDown} stickled={unlock} >
           <AnimatePresence>
             {showHomeLink && homeLink.map((v) => {
+              if (!v || !v.timeKey) {
+                return null;
+              }
               return (
                 <div key={v.timeKey}>
                   <LinkItemSmall

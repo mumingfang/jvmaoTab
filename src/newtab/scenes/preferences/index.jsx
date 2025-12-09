@@ -61,11 +61,18 @@ const Preferences = () => {
   const [activeType, setActiveType] = React.useState('wallpaper');
   const { systemTheme } = option.item;
 
-  const getSystemTheme = React.useCallback(() => option.getSystemTheme(), [systemTheme]);
+  const getSystemTheme = React.useCallback(() => {
+    if (option && typeof option.getSystemTheme === 'function') {
+      return option.getSystemTheme();
+    }
+    return 'auto';
+  }, [option, systemTheme]);
 
   const onclose = React.useCallback(() => {
-    tools.preferencesOpen = false;
-  }, []);
+    if (tools) {
+      tools.preferencesOpen = false;
+    }
+  }, [tools]);
 
   return (
     <Modal
@@ -91,7 +98,7 @@ const Preferences = () => {
             value={activeType} onChange={setActiveType}
           />
         </NavWrap>
-        {content[activeType]}
+        {content[activeType] || null}
       </Wrap>
     </Modal>
   );

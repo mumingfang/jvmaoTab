@@ -5,8 +5,7 @@ import { IconArrowBarDown } from "@tabler/icons-react";
 import styled from "styled-components";
 import FavIconIcon from "../newtab/scenes/public/FavIconIcon";
 import _ from "lodash";
-
-const href = new URL(window.location.href);
+import { getSearchInputValue, watchSearchInput } from "./utils/searchInput";
 
 function changeArray(arr, index) {
     if (index - 2 >= 0) {
@@ -74,68 +73,183 @@ const CloseIcon = styled.div`
 
 const So = () => {
     const ref = React.useRef();
+    const timeoutRef = React.useRef(null);
+    const watchCleanupRef = React.useRef(null);
     const [loading, setLoading] = React.useState(true);
     const [soList, setSoList] = React.useState([]);
-    const [n, setN] = React.useState(0);
+    const [n, setN] = React.useState([]);
     const [isOpen, setIsOpen] = React.useState(false);
     const [searchParams, setSearchParams] = React.useState({});
     const [close, setClose] = React.useState(false);
+    const [currentSearchText, setCurrentSearchText] = React.useState(""); // 当前搜索框中的文本
+    const [inputSelectors, setInputSelectors] = React.useState({}); // 每个 hostname 对应的搜索框选择器
 
+    // 使用 useMemo 确保 href 在 URL 变化时更新
+    const href = React.useMemo(() => {
+        try {
+            return new URL(window.location.href);
+        } catch (e) {
+            console.error("Failed to parse URL:", e);
+            return null;
+        }
+    }, []);
 
     const get_text = React.useCallback(() => {
-        return href.searchParams.get(searchParams[href.hostname]);
-    }, [searchParams, href]);
+        if (!href) {
+            return "";
+        }
+
+        // 优先从搜索框获取（实时更新）
+        // 搜索框的值是原始文本，需要编码
+        if (currentSearchText) {
+            return encodeURIComponent(currentSearchText);
+        }
+
+        // 回退到从 URL 参数获取
+        // URLSearchParams.get() 返回的是解码后的值，也需要编码
+        if (searchParams[href.hostname]) {
+            const paramValue = href.searchParams.get(searchParams[href.hostname]);
+            if (paramValue) {
+                return encodeURIComponent(paramValue);
+            }
+        }
+
+        return "";
+    }, [searchParams, href, currentSearchText]);
 
     const onMouseEnter = React.useCallback((key) => {
+        if (!Array.isArray(n) || n.length === 0) {
+            return;
+        }
         const newArr = new Array(n.length).fill(1);
         changeArray(newArr, key);
         setN(newArr);
     }, [n]);
 
     const onMouseLeave = React.useCallback(() => {
-        setTimeout(() => {
+        if (!Array.isArray(n) || n.length === 0) {
+            return;
+        }
+        // 清除之前的 timeout
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+        }
+        timeoutRef.current = setTimeout(() => {
             setN(new Array(n.length).fill(1));
+            timeoutRef.current = null;
         }, 50);
     }, [n]);
+
+    // 清理 timeout 当组件卸载时
+    React.useEffect(() => {
+        return () => {
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+            }
+        };
+    }, []);
+
+    // 监听搜索框变化
+    React.useEffect(() => {
+        if (!href || loading) {
+            return;
+        }
+
+        const currentDomain = href.hostname;
+        const customSelector = inputSelectors[currentDomain] || null;
+
+        // 初始化搜索框文本
+        const initialValue = getSearchInputValue(currentDomain, customSelector);
+        if (initialValue) {
+            setCurrentSearchText(initialValue);
+        }
+
+        // 开始监听搜索框变化
+        const cleanup = watchSearchInput(currentDomain, (value) => {
+            setCurrentSearchText(value);
+        }, customSelector);
+
+        watchCleanupRef.current = cleanup;
+
+        return () => {
+            if (watchCleanupRef.current) {
+                watchCleanupRef.current();
+                watchCleanupRef.current = null;
+            }
+        };
+    }, [href, loading, inputSelectors]);
 
 
 
     React.useEffect(() => {
+        if (!href) {
+            setLoading(false);
+            return;
+        }
 
-        chrome.runtime.sendMessage({
-            type: "getOption",
-        }, (res) => {
-            // console.log('%c [ res ]-136', 'font-size:13px; background:pink; color:#bf2c9f;', res)
-            if (typeof res['soList'] !== 'undefined' && res['soList'].length > 0) {
-                // 
-                const _n = [];
-                const hosts = [];
-                const soList = res['customkey']?.length ? [...SoIcon, ...res['customkey']] : SoIcon;
-                const activeSoList = res['soList'].map((v, k) => {
-                    _n[k] = 1;
-                    return _.find(soList, function (o) { return o.key === v; })
-                });
-
-                activeSoList.forEach((v, k) => {
-                    (v.host || []).forEach((host) => {
-                        hosts[host] = v.searchParams;
-                    })
-                });
-
-                const currentDomain = href.hostname;
-                const params = new URLSearchParams(window.location.search);
-                if (hosts[currentDomain] && params.has(hosts[currentDomain])) {
+        try {
+            chrome.runtime.sendMessage({
+                type: "getOption",
+            }, (res) => {
+                // 检查 chrome.runtime.lastError
+                if (chrome.runtime.lastError) {
+                    console.error("Chrome runtime error:", chrome.runtime.lastError);
                     setLoading(false);
-                    setSoList(activeSoList);
-                    setSearchParams(hosts);
-                    setN(_n);
-                    if (res['soAOpen']) {
-                        setIsOpen(true);
-                    }
+                    return;
                 }
-            }
-        });
-    }, [])
+
+                if (res && typeof res['soList'] !== 'undefined' && res['soList'].length > 0) {
+                    const _n = [];
+                    const hosts = [];
+                    const selectors = {}; // 存储每个 hostname 对应的搜索框选择器
+                    const soList = res['customkey']?.length ? [...SoIcon, ...res['customkey']] : SoIcon;
+                    const activeSoList = res['soList'].map((v, k) => {
+                        _n[k] = 1;
+                        return _.find(soList, function (o) { return o.key === v; })
+                    }).filter(Boolean); // 过滤掉 undefined 值
+
+                    activeSoList.forEach((v) => {
+                        if (v && v.host && Array.isArray(v.host)) {
+                            v.host.forEach((host) => {
+                                if (host && v.searchParams) {
+                                    hosts[host] = v.searchParams;
+                                    // 如果搜索引擎配置了 inputSelector，保存它
+                                    if (v.inputSelector) {
+                                        selectors[host] = v.inputSelector;
+                                    }
+                                }
+                            });
+                        }
+                    });
+
+                    const currentDomain = href.hostname;
+                    const params = new URLSearchParams(window.location.search);
+                    if (currentDomain && hosts[currentDomain] && params.has(hosts[currentDomain])) {
+                        setLoading(false);
+                        setSoList(activeSoList);
+                        setSearchParams(hosts);
+                        setInputSelectors(selectors);
+                        setN(_n);
+                        
+                        // 初始化搜索框文本（从 URL 参数）
+                        const initialText = params.get(hosts[currentDomain]) || "";
+                        setCurrentSearchText(initialText);
+                        
+                        if (res['soAOpen']) {
+                            setIsOpen(true);
+                        }
+                    } else {
+                        setLoading(false);
+                    }
+                } else {
+                    setLoading(false);
+                }
+            });
+        } catch (error) {
+            console.error("Error sending message to chrome runtime:", error);
+            setLoading(false);
+        }
+    }, [href])
 
     if (loading) {
         return null;
@@ -159,17 +273,31 @@ const So = () => {
                 }}
             >
                 {soList.map((item, k) => {
-                    return !(item.host || []).includes(href.host) ? (
+                    if (!item || !href) {
+                        return null;
+                    }
+                    // 统一使用 hostname 进行比较
+                    const itemHosts = item.host || [];
+                    const currentHostname = href.hostname;
+                    // 如果是特殊类型搜索引擎，不显示在快捷搜索切换工具中
+                    const shouldShow = !itemHosts.includes(currentHostname) && !item.isSpecialType;
+                    
+                    return shouldShow ? (
                         <NavItem
-                            key={item.name}
+                            key={item.name || `item-${k}`}
                             onMouseEnter={() => {
                                 onMouseEnter(k);
                             }}
                             onClick={() => {
-                                console.log("click", item.url + get_text());
-                                window.open(item.url + get_text(), isOpen ? "_blank" : "_self");
+                                try {
+                                    const text = get_text();
+                                    const targetUrl = item.url + text;
+                                    window.open(targetUrl, isOpen ? "_blank" : "_self");
+                                } catch (error) {
+                                    console.error("Error opening URL:", error);
+                                }
                             }}
-                            style={{ "--jvmao-net-scale": n[k] }}
+                            style={{ "--jvmao-net-scale": (Array.isArray(n) && n[k] !== undefined) ? n[k] : 1 }}
                         >
                             <Tooltip placement="right" title={item.name} >
                                 {item.icon ? item.icon : <div><FavIconIcon size={80} url={item.url} onlyDomain /></div>}

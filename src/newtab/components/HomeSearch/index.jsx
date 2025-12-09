@@ -115,7 +115,22 @@ const HomeSearch = (props) => {
       const activeSoItem = soList.find((v) => v.key === option.item.activeSo);
       if (activeSoItem?.url) {
         setInputValue("");
-        const searchUrl = `${activeSoItem.url}${encodeURIComponent(search)}`;
+        let searchUrl;
+        // 检测是否为特殊类型搜索引擎
+        if (activeSoItem.isSpecialType && activeSoItem.baseUrl && activeSoItem.queryParam) {
+          // 特殊类型：使用 baseUrl + queryParam
+          // 同时将查询内容存储到 sessionStorage，防止 URL 参数被清除
+          try {
+            sessionStorage.setItem('jvmaoQuery', search);
+            sessionStorage.setItem('jvmaoQueryTime', Date.now().toString());
+          } catch (e) {
+            console.warn('[HomeSearch] Failed to set sessionStorage:', e);
+          }
+          searchUrl = `${activeSoItem.baseUrl}?${activeSoItem.queryParam}=${encodeURIComponent(search)}`;
+        } else {
+          // 传统类型：保持原有逻辑
+          searchUrl = `${activeSoItem.url}${encodeURIComponent(search)}`;
+        }
         if (linkOpenSelf) {
           window.location.href = searchUrl;
         } else {

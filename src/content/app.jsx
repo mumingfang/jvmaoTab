@@ -1,7 +1,7 @@
 import React from "react";
-import _ from "lodash";
 import So from "./so";
 import Note from "./note";
+import SpecialSearch from "./specialSearch";
 
 const App = () => {
 
@@ -9,6 +9,7 @@ const App = () => {
         <>
             <Note />
             <So />
+            <SpecialSearch />
         </>
     );
 };

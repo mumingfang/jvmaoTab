@@ -12,9 +12,12 @@ const PreferencesSo = () => {
     const { soStyleIsRound, soList, soAOpen, activeSo, isSoBarDown, soHdCenter } = _option;
 
     const handleChange = (value) => {
+        if (!value || typeof value !== 'object') {
+            return;
+        }
         for (const key in value) {
             const v = value[key];
-            if (key === 'soList' && !v.includes(activeSo)) {
+            if (key === 'soList' && Array.isArray(v) && v.length > 0 && !v.includes(activeSo)) {
                 option.setItem('activeSo', v[0]);
             }
             option.setItem(key, v);

@@ -48,6 +48,9 @@ const PreferencesLink = () => {
     const { linkSpan, copyClose, defaultOpenAdd, defauiltLink, linkOpenSelf, showLinkNav, homeLinkMaxNum, rollingBack } = _option;
 
     const handleChange = (value) => {
+        if (!value || typeof value !== 'object') {
+            return;
+        }
         for (const key in value) {
             const v = value[key];
             option.setItem(key, v);

@@ -42,20 +42,24 @@ const PreferencesData = () => {
     const [spinning, setSpinning] = React.useState(false);
 
     const progressCallback = React.useCallback((props) => {
-        const { totalRows, completedRows } = props;
-        // const percent = Math.floor(completedRows / totalRows * 100);
+        if (props) {
+            const { totalRows, completedRows } = props;
+            // const percent = Math.floor(completedRows / totalRows * 100);
+        }
     }, []);
 
     const beforeUpload = React.useCallback((file) => {
         const fileType = ['application/json'];
 
-        if (!fileType.includes(file.type)) {
-            tools.error(`不支持的文件格式 ${file.type}`);
+        if (!file || !fileType.includes(file.type)) {
+            if (tools && typeof tools.error === 'function') {
+                tools.error(`不支持的文件格式 ${file?.type || '未知'}`);
+            }
             return false;
         }
 
         return true;
-    }, []);
+    }, [tools]);
 
     const handleChange = async (info) => {
         if (info.file.status === 'uploading') {
@@ -77,7 +81,20 @@ const PreferencesData = () => {
 
                         try {
                             blob.text().then(async (text) => {
-                                const json = JSON.parse(text);
+                                if (!text) {
+                                    throw new Error('文件内容为空');
+                                }
+                                let json;
+                                try {
+                                    json = JSON.parse(text);
+                                } catch (parseError) {
+                                    throw new Error('JSON 解析失败，请检查文件格式');
+                                }
+                                
+                                if (!json || !json.data) {
+                                    throw new Error('数据格式错误：缺少 data 字段');
+                                }
+                                
                                 const databaseName = json.data.databaseName;
                                 if (databaseName !== 'jvmao-tab') {
                                     throw new Error('数据库名称错误');
@@ -112,8 +129,11 @@ const PreferencesData = () => {
                             });
 
                         } catch (error) {
-                            console.error(error);
-                            tools.error(`${error.message}`);
+                            console.error('Data import error:', error);
+                            if (tools && typeof tools.error === 'function') {
+                                tools.error(error.message || '数据导入失败');
+                            }
+                            setSpinning(false);
                             setTimeout(() => {
                                 // window.location.reload();
                             }, 2000);

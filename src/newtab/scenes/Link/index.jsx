@@ -1,5 +1,4 @@
 import React from "react";
-import { Col, Row } from "antd";
 import { observer } from "mobx-react";
 import styled from "styled-components";
 import LinkPanel from "~/scenes/Link/LinkPanel";

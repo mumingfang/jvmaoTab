@@ -37,11 +37,14 @@ const WebDAV = () => {
     const { webDavURL, webDavUsername, webDavPassword, webDavDir, webdavTime } = _option;
 
     const handleChange = React.useCallback((value) => {
+        if (!value || typeof value !== 'object') {
+            return;
+        }
         for (const key in value) {
             const v = value[key];
             option.setItem(key, v);
         }
-    }, []);
+    }, [option]);
 
     const onModalClose = React.useCallback(() => {
         setOpen(false);
@@ -52,6 +55,13 @@ const WebDAV = () => {
     }, []);
 
     const onFinish = (v) => {
+        if (!v || !data || typeof data.test !== 'function') {
+            if (tools && typeof tools.error === 'function') {
+                tools.error("WebDAV 配置无效");
+            }
+            return;
+        }
+        
         setLoading(true);
         data.test(v.webDavURL, v.webDavUsername, v.webDavPassword, v.webDavDir).then((res) => {
             if (res == 1) {
@@ -61,7 +71,11 @@ const WebDAV = () => {
                     content: (
                         <div>
                             <p>点击确认将删除当前所有数据并拉取远端数据，建议先点击下方按钮导出本地数据</p>
-                            <Button size="small" onClick={() => tools.onExport()} > 导出本地数据 </Button>
+                            <Button size="small" onClick={() => {
+                                if (tools && typeof tools.onExport === 'function') {
+                                    tools.onExport();
+                                }
+                            }} > 导出本地数据 </Button>
                         </div>
                     ),
                     okText: "确认",
@@ -82,18 +96,20 @@ const WebDAV = () => {
             } else {
                 handleChange(v);
                 option.setItem('webdavOpen', true);
-                tools.success("WebDAV 设置成功");
+                if (tools && typeof tools.success === 'function') {
+                    tools.success("WebDAV 设置成功");
+                }
                 setTimeout(() => {
                     window.location.reload();
                 }, 1000);
             }
 
         }).catch((err) => {
-            tools.error("WebDAV 设置失败");
+            console.error('WebDAV test error:', err);
+            if (tools && typeof tools.error === 'function') {
+                tools.error(err.message || "WebDAV 设置失败");
+            }
             setLoading(false);
-        }).finally(() => {
-            // 如果用户没有点击确认或取消，确保重置 loading 状态
-            // 注意：在 onOk 和 onCancel 中已经处理了 loading 状态
         });
 
 

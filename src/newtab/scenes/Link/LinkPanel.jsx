@@ -3,17 +3,15 @@ import React from "react";
 import {
   useCreation,
   useMemoizedFn,
-  useWhyDidYouUpdate,
   useEventEmitter,
-  useMouse,
 } from "ahooks";
 import { observer } from "mobx-react";
 import useStores from "~/hooks/useStores";
 import useDebounce from "~/hooks/useDebounce";
 import { ExclamationCircleFilled } from "@ant-design/icons";
 import { IconTrash } from "@tabler/icons-react";
-import { Col, Row, Modal, message } from "antd";
-import { filterLinkList, getID, writeText } from "~/utils";
+import { Col, Row, Modal } from "antd";
+import { filterLinkList, getID, writeText, openUrl } from "~/utils";
 import _ from "lodash";
 import { ReactSortable } from "react-sortablejs";
 import LinkItem from "~/scenes/Link/LinkItem";
@@ -56,8 +54,14 @@ const sortableTag = React.forwardRef((props, ref) => {
 
 // 打开全部网页
 const openAllLink = (list) => {
+  if (!list || !Array.isArray(list)) {
+    return;
+  }
   list.forEach((v) => {
-    window.open(v.url);
+    if (v && v.url) {
+      // 使用openUrl统一处理，自动识别特殊协议
+      openUrl(v.url, { newTab: true });
+    }
   });
 };
 
@@ -73,7 +77,6 @@ const LinkPanel = (props) => {
     isChange: false,
   }).current;
 
-  // useWhyDidYouUpdate("LinkPanel", { state, link });
 
   const addPanelToLinkItem$ = useEventEmitter();
   addPanelToLinkItem$.useSubscription((value) => {
@@ -113,19 +116,23 @@ const LinkPanel = (props) => {
         okType: "danger",
         cancelText: "取消",
         onOk() {
+          const itemsToDelete = link.list.filter(
+            (v) => v.timeKey === item.timeKey || v.parentId === item.timeKey
+          );
           _.remove(
             link.list,
             (v) => v.timeKey === item.timeKey || v.parentId === item.timeKey
           );
+          onDelete(itemsToDelete);
           onChange(link.list);
         },
         onCancel() { },
       });
     } else {
-      onDelete([item]);
       _.remove(link.list, (v) => v.timeKey === item.timeKey);
+      onDelete([item]);
     }
-  }, [link.list]);
+  }, [onDelete, onChange]);
 
   const setLinkItem = useMemoizedFn(
     (parentId, value) => {
@@ -138,7 +145,7 @@ const LinkPanel = (props) => {
         state.isChange = false;
       }
     },
-    [link.list, onChange, state]
+    [onChange]
   );
 
   const addPanelToLinkItem = useMemoizedFn(
@@ -160,7 +167,7 @@ const LinkPanel = (props) => {
       onChange(link.list);
       state.isChange = false;
     },
-    [state, link.getActiveID, link.titleLink.length, link.list, onChange]
+    [link.getActiveID, link.titleLink.length, onChange]
   );
 
   // 复制全部网页
@@ -179,7 +186,7 @@ const LinkPanel = (props) => {
         });
       }
     });
-  }, []);
+  }, [tools]);
 
 
   const panelDom = useCreation(() => {
@@ -246,8 +253,8 @@ const LinkPanel = (props) => {
                   <LinkItem
                     {...v}
                     onDelete={() => {
-                      onDelete([v]);
                       _.remove(link.list, (item) => item.timeKey === v.timeKey);
+                      onDelete([v]);
                     }}
                   />
                 </Col>
@@ -258,7 +265,7 @@ const LinkPanel = (props) => {
       );
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link.titleLink, link.linkForId, linkSpan, onUpdate, state, setLinkItem]);
+  }, [link.titleLink, link.linkForId, linkSpan, onUpdate, setLinkItem, onDelete, onDelPanel, onCopyAll]);
 
   const newPanelDom = useCreation(() => {
     return (
@@ -276,7 +283,7 @@ const LinkPanel = (props) => {
           ghostClass={["link-item-ghost-new"]}
           list={[]}
           setList={(value) => {
-            if (value.length === 0) return;
+            if (!value || !Array.isArray(value) || value.length === 0) return;
             addPanelToLinkItem(value);
           }}
         ></ReactSortable>
@@ -301,17 +308,32 @@ const LinkPanel = (props) => {
           ghostClass={["link-item-delect"]}
           list={[]}
           setList={(value) => {
-            // console.log('%c [ value ]-281', 'font-size:13px; background:pink; color:#bf2c9f;', value)
+            if (!value || !Array.isArray(value) || value.length === 0) {
+              return;
+            }
+            // 从列表中删除拖拽到删除面板的项
+            value.forEach((item) => {
+              if (item && item.timeKey) {
+                _.remove(link.list, (v) => v.timeKey === item.timeKey);
+              }
+            });
+            onDelete(value);
           }}
         ></ReactSortable>
-        <IconTrash size={40} tabindex="-1"/>
+        <IconTrash size={40} tabIndex="-1"/>
       </motion.div>
     );
-  }, [isMove])
+  }, [isMove, onDelete])
 
   React.useEffect(() => {
     link.addPanelToLinkItemEmitter = addPanelToLinkItem$;
-  }, []);
+    return () => {
+      // 清理事件订阅
+      if (link.addPanelToLinkItemEmitter) {
+        link.addPanelToLinkItemEmitter = null;
+      }
+    };
+  }, [addPanelToLinkItem$, link]);
 
   React.useEffect(() => {
     if (warpRef.current && !scrollContainerRef.current) {
