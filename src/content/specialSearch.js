@@ -126,8 +126,10 @@ const SpecialSearch = () => {
                     return;
                 }
 
-                // 开始处理特殊搜索
-                handleSpecialSearch(searchConfig, query, currentUrl);
+                setTimeout(() => {
+                    // 开始处理特殊搜索
+                    handleSpecialSearch(searchConfig, query, currentUrl);
+                }, 600);
             });
         }
     }, []);
