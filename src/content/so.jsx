@@ -44,8 +44,8 @@ const Nav = styled.ul`
 const NavItem = styled.li`
     margin-top: 8px;
     cursor: pointer;
-    width: calc(var(--jvmao-net-scale) * 28px);
-    height: calc(var(--jvmao-net-scale) * 28px);
+    width: 28px;
+    height: 28px;
     overflow: hidden;
     transition: all 0.3s;
     svg,img {
