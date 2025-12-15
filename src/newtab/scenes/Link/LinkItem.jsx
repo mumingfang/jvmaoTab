@@ -45,8 +45,12 @@ const LinkItem = (props) => {
     });
   }, [tools]);
 
-  // 处理链接点击，特殊协议使用chrome.tabs API
   const handleLinkClick = useMemoizedFn((e) => {
+    // 忽略右键（只处理左键 click 和中键 auxclick）
+    if (e.type === "auxclick" && e.button !== 1) {
+      return;
+    }
+
     if (!props.url || small) {
       return;
     }

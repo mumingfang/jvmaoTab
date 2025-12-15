@@ -57,16 +57,21 @@ const LinkItemSmall = (props) => {
             return;
         }
 
+        if (e.type === "auxclick" && e.button !== 1) {
+            return;
+        }
+
+
         // 检测是否为特殊协议
         if (isSpecialProtocol(props.url)) {
             // 阻止默认行为
             e.preventDefault();
             e.stopPropagation();
-            
+
             // 检测修饰键（Cmd/Ctrl）或中键点击，决定是否在新标签页打开
             // e.button === 1 是中键点击，e.button === 0 是左键点击
             const isNewTab = e.metaKey || e.ctrlKey || e.button === 1;
-            
+
             // 使用chrome.tabs API打开
             // 如果Cmd+点击或中键点击，强制新标签页；否则根据linkOpenSelf配置决定
             openUrl(props.url, {
@@ -82,9 +87,9 @@ const LinkItemSmall = (props) => {
             <Tooltip title={props.title} placement={isSoBarDown ? "top" : "bottom"}>
                 <Wrap initial="hidden" animate="show" exit="hidden" variants={animations} isRound={option.item?.soStyleIsRound}>
                     <FavIconIcon size={28} url={props.url} />
-                    <a 
-                        className="link-a" 
-                        href={props.url} 
+                    <a
+                        className="link-a"
+                        href={props.url}
                         target={linkOpenSelf ? '_blank' : '_self'}
                         onClick={handleLinkClick}
                         onAuxClick={handleLinkClick}
