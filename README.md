@@ -112,3 +112,17 @@ https://sspai.com/post/90463
 ```bash
  yarn && yarn d
 ```
+# 打包 Firefox 版本
+```bash
+ yarn && yarn build:firefox
+```
+
+#### 在 Firefox 本地临时加载（开发/自用）
+
+1. 打开 Firefox，地址栏输入：`about:debugging`
+2. 左侧选择：**This Firefox / 此 Firefox**
+3. 点击 **“Load Temporary Add-on / 加载临时附加组件”**
+4. 选择 `dist/manifest.json`（build 之后的 dist 目录下面）
+5. 成功后，新标签页打开就会进入橘猫起始页
+
+> 注意：临时加载在重启浏览器后会失效，发布到 AMO 后安装的是正式版。
