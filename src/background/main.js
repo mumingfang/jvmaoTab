@@ -1,3 +1,5 @@
+import { browserApi, getLastError } from "@/utils/browser";
+
 const cloudOptions = ['soList', 'activeSo', 'translateList', 'activeTranslate', 'linkSpan', 'copyClose', 'pwKey', 'defaultOpenAdd', 'soStyleIsRound', 'soAOpen', 'defauiltLink', 'isSoBarDown', 'linkOpenSelf', 'customkey', 'systemTheme', 'showHomeClock', 'homeLinkMaxNum', 'rollingBack', 'soHdCenter', 'tabTitle', 'webDavURL', 'webDavUsername', 'webDavPassword', 'webDavDir', 'homeImgOpacity'];
 
 let optionsValue = {};
@@ -47,7 +49,7 @@ const setOption = (sendResponse, values) => {
         ...saveOptionsValue
       };
       saveOptionsValue = {};
-      chrome.storage.sync.set(dataToSave, function (res) {
+      browserApi?.storage?.sync?.set(dataToSave, function () {
         getOptionTime = 0;
       });
     }
@@ -62,7 +64,7 @@ const _getOption = () => {
     if (getOptionTime + 10 * 60 * 1000 > Date.now()) {
       resolve(optionsValue);
     } else {
-      chrome.storage.sync.get(cloudOptions, function (result) {
+      browserApi?.storage?.sync?.get(cloudOptions, function (result) {
         optionsValue = result;
         getOptionTime = Date.now();
         resolve(result);
@@ -78,7 +80,7 @@ const getOption = (sendResponse, values) => {
   })
 }
 
-chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
+browserApi?.runtime?.onMessage.addListener(function (request, sender, sendResponse) {
   switch (request.type) {
     case "setOptions":
       setOption(sendResponse, request.data);
@@ -86,6 +88,26 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     case "getOption":
       getOption(sendResponse);
       break;
+    case "PAGE_FAVICON_DETECTED":
+      // 暂存到 chrome.storage.local，newtab 会定期检查并保存
+      if (request.data && request.data.domain && request.data.iconUrl) {
+        browserApi?.storage?.local?.get(['pendingFavicons'], (result) => {
+          const pending = result.pendingFavicons || [];
+          // 避免重复
+          const exists = pending.find((p) => p.domain === request.data.domain);
+          if (!exists) {
+            pending.push({
+              domain: request.data.domain,
+              iconUrl: request.data.iconUrl,
+              size: request.data.size || null,
+              timestamp: Date.now(),
+            });
+            browserApi?.storage?.local?.set({ pendingFavicons: pending });
+          }
+        });
+      }
+      sendResponse({ ok: true });
+      return true; // 异步响应
   }
   return true;
 });
@@ -103,7 +125,7 @@ const setContextMenusData = (type, data, tab) => {
     _data.imgUrl = data.srcUrl;
   }
 
-  chrome.storage.local.get(['contextMenusData'], function (res) {
+  browserApi?.storage?.local?.get(['contextMenusData'], function (res) {
     let saveData = [];
     if (res?.contextMenusData?.length > 0) {
       saveData = [
@@ -113,23 +135,23 @@ const setContextMenusData = (type, data, tab) => {
     } else {
       saveData = [_data]
     }
-    chrome.storage.local.set({
+    browserApi?.storage?.local?.set({
       'contextMenusData': saveData
     });
   });
 }
 
 // 在background script中创建右键菜单项
-chrome.runtime.onInstalled.addListener(function () {
+browserApi?.runtime?.onInstalled.addListener(function () {
   // 创建一个右键菜单项，只在用户右键点击图片时显示
-  chrome.contextMenus.create({
+  browserApi?.contextMenus?.create({
     id: "imageMenu",
     title: "将图片存储至便签",
     contexts: ["image"], // 只在用户右键点击图片时显示这个菜单项
   });
 
   // 创建一个右键菜单项，只在用户选中文本时显示
-  chrome.contextMenus.create({
+  browserApi?.contextMenus?.create({
     id: "textMenu",
     title: "将选中文本存储至便签",
     contexts: ["selection"], // 只在用户选中文本时显示这个菜单项
@@ -137,17 +159,17 @@ chrome.runtime.onInstalled.addListener(function () {
 });
 
 // 监听右键菜单项的点击事件
-chrome.contextMenus.onClicked.addListener(function (info, tab) {
+browserApi?.contextMenus?.onClicked.addListener(function (info, tab) {
   if (info.menuItemId === "imageMenu") {
     // console.log("用户右键点击了图片，图片的URL是：", info);
     setContextMenusData('image', info, tab);
   } else if (info.menuItemId === "textMenu") {
     // console.log("用户选中了文本，选中的文本是：", info, tab);
     // setContextMenusData('text', info, tab);
-    chrome.tabs.sendMessage(tab.id, {
+    browserApi?.tabs?.sendMessage(tab.id, {
       type: "onTextMenuCS"
     }, function (response) {
-      if (chrome.runtime.lastError || !response?.html) {
+      if (getLastError() || !response?.html) {
         // 如果没有收到消息，默认走info
         setContextMenusData('text', info, tab);
       } else {

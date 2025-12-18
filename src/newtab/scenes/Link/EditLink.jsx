@@ -47,11 +47,12 @@ const EditLink = (props) => {
           link.setCache();
           cb();
         }, 0);
+        // 不再主动抓取 favicon，等用户真正访问页面时由 content script 自动检测
       })
       .catch((res) => {
         tools.error("失败");
       });
-  }, [timeKey, id]);
+  }, [timeKey, id, linkId, link, tools, cb]);
 
   React.useEffect(() => {
     if (isLink) {

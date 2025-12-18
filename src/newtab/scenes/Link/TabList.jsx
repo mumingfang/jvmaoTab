@@ -36,7 +36,11 @@ const AddAll = styled(Button)`
 const updateTabList = (list = []) => {
   const newList = [];
   list.forEach((v) => {
-    if (v.url !== "chrome://newtab/") {
+    // 屏蔽 Chrome 和 Firefox 的新标签页
+    const isChromeNewTab = v.url === "chrome://newtab/";
+    const isFirefoxNewTab = v.url === "about:newtab" || v.url === "about:home" || v.url?.startsWith("about:");
+    
+    if (!isChromeNewTab && !isFirefoxNewTab) {
       newList.push({
         title: v.title,
         icon: v.favIconUrl,

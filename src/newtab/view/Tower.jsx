@@ -6,6 +6,8 @@ import { useDocumentVisibility } from 'ahooks';
 import PublicModal from "~/scenes/Public/PublicModal";
 import styled, { createGlobalStyle } from "styled-components";
 import { IconCloudUpload, IconCloudDownload } from "@tabler/icons-react";
+import { saveFavicon } from "~/db";
+import { db } from "~/db";
 import _ from "lodash";
 
 const { useToken } = theme;
@@ -128,6 +130,38 @@ const Tower = ({ children }) => {
     }
   }, [documentVisibility]);
 
+  // 清理不在抽屉中的 favicon（定时任务，每2小时执行一次）
+  const cleanupUnusedFavicons = useCallback(async () => {
+    try {
+      // 获取所有链接的域名集合
+      const allLinks = await db.link.toArray();
+      const domainsInLink = new Set();
+      allLinks.forEach((link) => {
+        if (link.url) {
+          try {
+            const origin = new URL(link.url).origin;
+            domainsInLink.add(origin);
+          } catch {
+            // ignore invalid URLs
+          }
+        }
+      });
+
+      // 获取所有 favicon 记录
+      const allFavicons = await db.favicon.toArray();
+      const toDelete = allFavicons
+        .filter((fav) => !domainsInLink.has(fav.domain))
+        .map((fav) => fav.domain);
+
+      if (toDelete.length > 0) {
+        await db.favicon.where("domain").anyOf(toDelete).delete();
+        console.log(`[favicon] Cleaned up ${toDelete.length} unused favicons`);
+      }
+    } catch (error) {
+      console.error("[favicon] Cleanup error", error);
+    }
+  }, []);
+
   React.useEffect(() => {
     tools.messageApi = messageApi;
     link.restart();
@@ -144,7 +178,72 @@ const Tower = ({ children }) => {
       restart();
     });
 
-  }, []);
+    // 监听来自 content script 的 favicon 检测消息（直接消息）
+    const messageListener = (request, sender, sendResponse) => {
+      if (request.type === "PAGE_FAVICON_DETECTED" && request.data) {
+        const { domain, iconUrl, size } = request.data;
+        if (domain && iconUrl) {
+          saveFavicon({ domain, iconUrl, size }).catch((err) => {
+            console.error("[favicon] Failed to save favicon from content script", err);
+          });
+        }
+        sendResponse({ ok: true });
+        return true; // 异步响应
+      }
+      return false;
+    };
+
+    // 处理暂存在 chrome.storage.local 中的 favicon（来自 background）
+    const processPendingFavicons = () => {
+      const runtime = typeof chrome !== "undefined" ? chrome : (typeof browser !== "undefined" ? browser : null);
+      if (runtime && runtime.storage && runtime.storage.local) {
+        runtime.storage.local.get(['pendingFavicons'], (result) => {
+          const pending = result.pendingFavicons || [];
+          if (pending.length > 0) {
+            pending.forEach((item) => {
+              if (item.domain && item.iconUrl) {
+                saveFavicon({ domain: item.domain, iconUrl: item.iconUrl, size: item.size }).catch((err) => {
+                  console.error("[favicon] Failed to save pending favicon", err);
+                });
+              }
+            });
+            // 清空已处理的
+            runtime.storage.local.set({ pendingFavicons: [] });
+          }
+        });
+      }
+    };
+
+    const runtime = typeof chrome !== "undefined" ? chrome.runtime : (typeof browser !== "undefined" ? browser.runtime : null);
+    if (runtime && runtime.onMessage) {
+      runtime.onMessage.addListener(messageListener);
+    }
+
+    // 初始化时处理暂存的 favicon
+    processPendingFavicons();
+    // 定期检查暂存的 favicon（每30秒）
+    const pendingCheckInterval = setInterval(() => {
+      processPendingFavicons();
+    }, 30000);
+
+    // 定时清理任务：每2小时执行一次
+    const cleanupInterval = setInterval(() => {
+      cleanupUnusedFavicons();
+    }, 2 * 60 * 60 * 1000); // 2小时
+
+    // 初始化时也执行一次清理（延迟执行，避免影响启动速度）
+    setTimeout(() => {
+      cleanupUnusedFavicons();
+    }, 5000);
+
+    return () => {
+      if (runtime && runtime.onMessage) {
+        runtime.onMessage.removeListener(messageListener);
+      }
+      clearInterval(cleanupInterval);
+      clearInterval(pendingCheckInterval);
+    };
+  }, [cleanupUnusedFavicons]);
 
   React.useEffect(() => {
     if (tabTitle) {

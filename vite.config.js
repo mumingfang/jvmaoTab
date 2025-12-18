@@ -3,12 +3,13 @@ import {
 } from "vite";
 import path from "path";
 import webExtension from "@samrum/vite-plugin-web-extension";
-import {
-  optimizeLodashImports
-} from "@optimize-lodash/rollup-plugin";
+// import {
+//   optimizeLodashImports
+// } from "@optimize-lodash/rollup-plugin";
 // import nodePolyfills from "rollup-plugin-polyfill-node";
 import react from "@vitejs/plugin-react-swc";
 import manifest from "./src/manifest";
+import manifestFirefox from "./src/manifest.firefox";
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -16,26 +17,32 @@ export default defineConfig({
   // base: "/",
   // envDir: "../",
   // publicDir: "../public",
-  plugins: [
-    webExtension({
-      manifest: {
-        ...manifest,
-      },
-      additionalInputs: {
-        scripts: [
-          {
-            fileName: 'src/content/index.html',
-            webAccessible: true,
-          },
-        ],
-      },
-      useDynamicUrlWebAccessibleResources: false,
-      // optimizeWebAccessibleResources: false,
-      // devHtmlTransform: true,
-    }),
+  plugins: (() => {
+    const target = process.env.TARGET || process.env.BROWSER || "chrome";
+    const isFirefox = target === "firefox";
+    const baseManifest = isFirefox ? manifestFirefox : manifest;
+
+    return [
+      webExtension({
+        manifest: {
+          ...baseManifest,
+        },
+        additionalInputs: {
+          scripts: [
+            {
+              fileName: "src/content/index.html",
+              webAccessible: true,
+            },
+          ],
+        },
+        useDynamicUrlWebAccessibleResources: false,
+        // optimizeWebAccessibleResources: false,
+        // devHtmlTransform: true,
+      }),
     react(),
     // optimizeLodashImports(),
-  ],
+    ];
+  })(),
   server: {
     host: "0.0.0.0",
     port: 30,

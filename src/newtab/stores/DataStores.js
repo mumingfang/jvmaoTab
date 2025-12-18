@@ -538,7 +538,10 @@ export default class DataStores {
         db.export({
           prettyJson: true,
           progressCallback: () => {},
-          skipTables: ['cache'],
+          // 不同步的表：
+          // - cache: 本地缓存数据
+          // - favicon: 本地按域名缓存的站点图标（体积大且可重新生成）
+          skipTables: ['cache', 'favicon'],
           transform: (table, value, key) => {
             if (table === 'option') {
               switch (value.key) {
