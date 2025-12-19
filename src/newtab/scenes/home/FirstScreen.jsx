@@ -5,11 +5,11 @@ import { theme, Button, Tooltip, Image } from "antd";
 import { useLocation } from "react-router-dom";
 import useStores from "~/hooks/useStores";
 import { IconCirclePlus, IconEditCircle } from "@tabler/icons-react";
-import { motion, useAnimationControls, AnimatePresence } from "framer-motion";
+import { motion, useAnimationControls } from "framer-motion";
 import { useUpdateEffect, useHover, useMemoizedFn, useCreation } from "ahooks";
 import HomeNote from "~/scenes/note/homeNote";
 import logoPng from "~/assets/logo.png";
-import LinkItemSmall from "~/scenes/Link/LinkItemSmall";
+import HomeLinkList from "./HomeLinkList";
 import HomeSearch from "~/components/HomeSearch";
 import Clock from "~/components/Clock";
 import _ from "lodash";
@@ -116,31 +116,6 @@ const NavRight = styled.div`
   display: flex;
   align-items: center;
   margin-right: 20px;
-`;
-const HomeLinkNav = styled.div`
-  position: absolute;
-  z-index: ${(props) => props.stickled ? "-1" : "50"};
-  left: 50%;
-  top: calc(${(props) => (props.isSoBarDown ? "85vh - 10px" : "30vh + 60px")});
-  transform: translateX(-50%) ${(props) => (props.isSoBarDown ? "translateY(-100%)" : "")};
-  width: 500px;
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 15px 15px;
-  padding: 15px;
-  border-radius: 12px;
-  transition: border-color 0.3s, background-color 0.3s, backdrop-filter 0.3s;
-  border: 1px solid rgba(0, 0, 0, 0);
-  -webkit-user-select: none;
-  -moz-user-select: none; 
-  -ms-user-select: none; 
-  user-select: none; 
-  &:hover {
-    background-color: var(--homeNavBg);
-    border-color: var(--homeNavBorderColor);
-    backdrop-filter: saturate(180%) blur(20px);
-  }
 `;
 const clockAnimations = {
   show: {
@@ -465,25 +440,13 @@ const FirstScreen = (props) => {
       >
         <HomeSearch stickled={unlock} />
       </SearchWrap>
-      {homeLinkTimeKey && homeLink && Array.isArray(homeLink) && homeLink.length > 0 ? (
-        <HomeLinkNav isSoBarDown={isSoBarDown} stickled={unlock} >
-          <AnimatePresence>
-            {showHomeLink && homeLink.map((v) => {
-              if (!v || !v.timeKey) {
-                return null;
-              }
-              return (
-                <div key={v.timeKey}>
-                  <LinkItemSmall
-                    isSoBarDown={isSoBarDown}
-                    {...v}
-                  />
-                </div>
-              );
-            })}
-          </AnimatePresence>
-        </HomeLinkNav>
-      ) : null}
+      <HomeLinkList
+        homeLink={homeLink}
+        homeLinkTimeKey={homeLinkTimeKey}
+        isSoBarDown={isSoBarDown}
+        stickled={unlock}
+        showHomeLink={showHomeLink}
+      />
       <HomeNote stickled={unlock} />
     </>
   );

@@ -2,7 +2,7 @@ const manifestFirefox = {
   // Firefox 目前对 MV3 支持不完全，这里使用 MV2 风格的 manifest
   manifest_version: 2,
   name: "橘猫起始页",
-  version: "1.3.4",
+  version: "1.3.5",
   description: "起始页还可以是这样的",
   homepage_url: "https://www.jvmao.net",
 
@@ -10,7 +10,7 @@ const manifestFirefox = {
   browser_specific_settings: {
     gecko: {
       id: "newtab@jvmao.net",
-      strict_min_version: "102.0",
+      strict_min_version: "140.0",
       // 声明数据收集权限：
       // - 本扩展不收集或传输任何个人数据，因此使用 "none"
       // 文档：https://mzl.la/firefox-builtin-data-consent
@@ -60,6 +60,7 @@ const manifestFirefox = {
   // MV2 里 web_accessible_resources 是字符串数组
   web_accessible_resources: [
     "_favicon/*",
+    "default-favicon.svg",
   ],
 };
 

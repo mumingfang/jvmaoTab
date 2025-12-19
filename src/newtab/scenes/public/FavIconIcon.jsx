@@ -2,14 +2,23 @@ import React from "react";
 import { getFavicon } from "~/db";
 import { isSpecialProtocol } from "~/utils";
 
+// 检测是否是 Firefox（Firefox 原生提供 browser API，Chrome 只有 chrome API）
+const isFirefox = () => {
+  // Firefox 同时提供 browser 和 chrome（兼容层），但原生的是 browser
+  // Chrome 只有 chrome，没有 browser
+  return typeof browser !== "undefined" && browser.runtime && typeof browser.runtime.getURL === "function";
+};
+
 // 获取默认网络图标路径（统一的默认图标，用于没有 favicon 记录的情况）
 const getDefaultFaviconSrc = () => {
   try {
+    // Firefox 优先使用 browser API
+    if (isFirefox() && browser.runtime && browser.runtime.getURL) {
+      return browser.runtime.getURL("default-favicon.svg");
+    }
+    // Chrome 使用 chrome API
     if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
       return chrome.runtime.getURL("default-favicon.svg");
-    }
-    if (typeof browser !== "undefined" && browser.runtime && browser.runtime.getURL) {
-      return browser.runtime.getURL("default-favicon.svg");
     }
   } catch {
     // ignore
@@ -18,10 +27,10 @@ const getDefaultFaviconSrc = () => {
   return "/default-favicon.svg";
 };
 
-// 回退逻辑：在本地表未命中时，Chrome 走 /_favicon/ 逻辑，其他浏览器使用默认图标
+// 回退逻辑：在本地表未命中时，Chrome 走 /_favicon/ 逻辑，Firefox 使用默认图标
 const getFallbackSrc = (rawUrl, size, onlyDomain) => {
-  // Chrome 浏览器：尝试使用 /_favicon/ API
-  if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
+  // Chrome 浏览器：尝试使用 /_favicon/ API（Firefox 不支持此 API）
+  if (!isFirefox() && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
     try {
       if (!rawUrl) {
         rawUrl = window.location.href;

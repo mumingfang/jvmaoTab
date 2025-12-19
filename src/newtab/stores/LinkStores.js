@@ -12,6 +12,7 @@ import {
   getID,
   diff
 } from "~/utils";
+import { ensureFaviconForUrl } from "~/utils/favicon";
 import _ from "lodash";
 
 export default class LinkStore {
@@ -329,6 +330,11 @@ export default class LinkStore {
               ]; 
               this.addLink(links).then(() => {
                 this.getNav();
+                // 自动为默认链接获取图标（由于所有默认链接都是同一个 URL，只需要获取一次）
+                const defaultUrl = "https://n.mumingfang.com/my";
+                ensureFaviconForUrl(defaultUrl).catch((err) => {
+                  console.debug("[favicon] Failed to fetch favicon for default link", defaultUrl, err);
+                });
               })
             }, 0);
           } else {

@@ -131,6 +131,7 @@ const Tower = ({ children }) => {
   }, [documentVisibility]);
 
   // 清理不在抽屉中的 favicon（定时任务，每2小时执行一次）
+  // 只清理超过2小时且不在抽屉中的 favicon，避免频繁删除和重新添加
   const cleanupUnusedFavicons = useCallback(async () => {
     try {
       // 获取所有链接的域名集合
@@ -149,13 +150,22 @@ const Tower = ({ children }) => {
 
       // 获取所有 favicon 记录
       const allFavicons = await db.favicon.toArray();
+      const now = Date.now();
+      const twoHoursAgo = now - 2 * 60 * 60 * 1000; // 2小时前的时间戳
+      
       const toDelete = allFavicons
-        .filter((fav) => !domainsInLink.has(fav.domain))
+        .filter((fav) => {
+          // 不在抽屉中的域名
+          const notInLink = !domainsInLink.has(fav.domain);
+          // 且最后更新时间超过2小时
+          const isOld = fav.lastUpdate && fav.lastUpdate < twoHoursAgo;
+          return notInLink && isOld;
+        })
         .map((fav) => fav.domain);
 
       if (toDelete.length > 0) {
         await db.favicon.where("domain").anyOf(toDelete).delete();
-        console.log(`[favicon] Cleaned up ${toDelete.length} unused favicons`);
+        console.log(`[favicon] Cleaned up ${toDelete.length} unused favicons (older than 2 hours)`);
       }
     } catch (error) {
       console.error("[favicon] Cleanup error", error);
