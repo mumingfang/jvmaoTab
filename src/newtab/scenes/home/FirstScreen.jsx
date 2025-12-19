@@ -1,7 +1,7 @@
 import React from "react";
 import styled from "styled-components";
 import { observer } from "mobx-react";
-import { theme, Button, Tooltip, Image } from "antd";
+import { theme, Button, Tooltip, Badge } from "antd";
 import { useLocation } from "react-router-dom";
 import useStores from "~/hooks/useStores";
 import { IconCirclePlus, IconEditCircle } from "@tabler/icons-react";
@@ -24,31 +24,94 @@ const FirstScreenImgBg = styled(motion.div)`
   right: 0;
   bottom: 0;
   background-color: ${(props) => props.backgroundColor};
-  .ant-image {
+  
+  &::before {
+    content: "";
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
+    background-image: ${(props) => props.bg1Url ? `url(${props.bg1Url})` : 'none'};
+    background-repeat: ${(props) => {
+      switch (props.bg1ImageFit) {
+        case 'center':
+          return 'repeat';
+        default:
+          return 'no-repeat';
+      }
+    }};
+    background-position: ${(props) => {
+      switch (props.bg1ImageFit) {
+        case 'center':
+          return 'center top';
+        default:
+          return 'center center';
+      }
+    }};
+    background-size: ${(props) => {
+      switch (props.bg1ImageFit) {
+        case 'width100':
+          return '100% auto';
+        case 'height100':
+          return 'auto 100%';
+        case 'center':
+          return 'auto';
+        case 'cover':
+        default:
+          return 'cover';
+      }
+    }};
+    opacity: ${(props) => props.showBg1 ? 'var(--homeImgOpacity)' : '0'};
+    transition: opacity 0.3s ease;
+    filter: ${(props) => props.bg1Blur ? 'blur(10px)' : 'none'};
   }
-  .ant-image-img {
-    object-fit: cover;
-    opacity: var(--homeImgOpacity);
+  
+  &::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: ${(props) => props.bg2Url ? `url(${props.bg2Url})` : 'none'};
+    background-repeat: ${(props) => {
+      switch (props.bg2ImageFit) {
+        case 'center':
+          return 'repeat';
+        default:
+          return 'no-repeat';
+      }
+    }};
+    background-position: ${(props) => {
+      switch (props.bg2ImageFit) {
+        case 'center':
+          return 'center top';
+        default:
+          return 'center center';
+      }
+    }};
+    background-size: ${(props) => {
+      switch (props.bg2ImageFit) {
+        case 'width100':
+          return '100% auto';
+        case 'height100':
+          return 'auto 100%';
+        case 'center':
+          return 'auto';
+        case 'cover':
+        default:
+          return 'cover';
+      }
+    }};
+    opacity: ${(props) => props.showBg2 ? 'var(--homeImgOpacity)' : '0'};
+    transition: opacity 0.16s ease, filter 0.16s ease;
+    filter: ${(props) => {
+      if (!props.showBg2) return 'none';
+      // 第二壁纸默认模糊，只有在激活时才清晰
+      return props.isBg2Active ? 'blur(0px)' : 'blur(10px)';
+    }};
   }
-  .ant-image-placeholder{
-    &:before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      backdrop-filter: blur(20px);
-      z-index: 10;
-    }
-  }
-`;
-const ImgWrap = styled(motion.div)`
 `;
 
 const HeaderWrap = styled(motion.div)`
@@ -143,24 +206,6 @@ const clockAnimations = {
     transition: { duration: 0.16, ease: "easeOut" },
   }
 };
-const bgAnimations = {
-  show: {
-    opacity: 1,
-  },
-  hidden: {
-    opacity: 0,
-  }
-};
-const bg2Animations = {
-  show: {
-    opacity: 1,
-    filter: "blur(0px)",
-  },
-  hidden: {
-    opacity: 0,
-    filter: "blur(10px)",
-  }
-};
 const headerAnimations = {
   show: {
     y: 0,
@@ -170,11 +215,49 @@ const headerAnimations = {
   }
 };
 
+// 获取图片尺寸
+const getImageSize = (url) => {
+  return new Promise((resolve, reject) => {
+    if (!url) {
+      reject(new Error('No URL provided'));
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      resolve({
+        width: img.naturalWidth || img.width,
+        height: img.naturalHeight || img.height,
+      });
+    };
+    img.onerror = () => {
+      reject(new Error(`Failed to load image: ${url}`));
+    };
+    img.src = url;
+  });
+};
+
+// 根据图片尺寸智能判断展示方式
+const getAutoImageFit = async (url) => {
+  if (!url) return 'cover';
+  try {
+    const { width, height } = await getImageSize(url);
+    // 如果高度大于宽度（竖图），使用 height100，否则使用 cover
+    return height > width ? 'height100' : 'cover';
+  } catch (error) {
+    console.error('Failed to get image size:', error);
+    return 'cover'; // 出错时默认使用 cover
+  }
+};
+
 const FirstScreen = (props) => {
   const { handleUnlock, unlock, showTopIcon } = props;
 
   const { home, tools, note, option, link } = useStores();
-  const { isSoBarDown, homeLinkTimeKey, bgColor, bgType, showHomeClock, homeLinkMaxNum = 14, soHdCenter } = option.item;
+  const { isSoBarDown, homeLinkTimeKey, bgColor, bgType, showHomeClock, homeLinkMaxNum = 14, soHdCenter, bgImageFit = 'cover', bg2ImageFit = 'cover' } = option.item;
+  
+  // 智能判断实际的展示方式（初始值：如果是 auto 则先用 cover，待图片加载后更新）
+  const [actualBg1ImageFit, setActualBg1ImageFit] = React.useState(bgImageFit === 'auto' ? 'cover' : bgImageFit);
+  const [actualBg2ImageFit, setActualBg2ImageFit] = React.useState(bg2ImageFit === 'auto' ? 'cover' : bg2ImageFit);
   const searchWrapController = useAnimationControls();
   const clockWrapController = useAnimationControls();
 
@@ -182,6 +265,7 @@ const FirstScreen = (props) => {
   const location = useLocation();
   const [homeLink, setHomeLink] = React.useState([]);
   const [showHomeLink, setShowHomeLink] = React.useState(!unlock);
+  const [pendingLinksCount, setPendingLinksCount] = React.useState(0);
 
   const logoIconRef = React.useRef(null);
   const isLogoIconHovering = useHover(logoIconRef);
@@ -229,57 +313,50 @@ const FirstScreen = (props) => {
 
 
   const bgImg = useCreation(() => {
+    const showBg1 = home.bgUrl && (!home.isBg2 || !home.bg2Url);
+    const showBg2 = home.bg2Url && home.isBg2;
+    
     return (
       <FirstScreenImgBg
         backgroundColor={bgType === "color" ? bgColor : ''}
+        bg1ImageFit={actualBg1ImageFit}
+        bg2ImageFit={actualBg2ImageFit}
+        bg1Url={home.bgUrl || null}
+        bg2Url={home.bg2Url || null}
+        showBg1={showBg1}
+        showBg2={showBg2}
+        isBg2Active={home.isBg2}
+        bg1Blur={false}
         animate={{
           opacity: unlock ? 0 : 1,
         }}
         transition={{ duration: 0.6, ease: "backIn" }}
-      >
-        {home.bgUrl ? (
-          <ImgWrap
-            initial={'show'}
-            animate={home.bg2Url && home.isBg2 ? 'hidden' : "show"}
-            variants={bgAnimations}
-          >
-            <Image
-              width={"100vw"}
-              height={"100vh"}
-              src={home.bgUrl}
-              preview={false}
-              placeholder={
-                <Image
-                  preview={false}
-                  src={home.bgThumbnailUrl}
-                  className="bgThumbnai"
-                  width={"100vw"}
-                  height={"100vh"}
-                />
-              }
-            />
-          </ImgWrap>
-        ) : null}
-
-        {home.bg2Url ? (
-          <ImgWrap
-            initial={'hidden'}
-            animate={home.isBg2 ? 'show' : "hidden"}
-            variants={bg2Animations}
-          >
-            <Image
-              width={"100vw"}
-              height={"100vh"}
-              src={home.bg2Url}
-              preview={false}
-            />
-          </ImgWrap>
-
-        ) : null}
-      </FirstScreenImgBg>
+      />
     )
 
-  }, [bgType, bgColor, home.bgUrl, home.bg2Url, home.isBg2, unlock, home.bgThumbnailUrl])
+  }, [bgType, bgColor, actualBg1ImageFit, actualBg2ImageFit, home.bgUrl, home.bg2Url, home.isBg2, unlock])
+
+  // 智能判断第一壁纸的展示方式
+  React.useEffect(() => {
+    if (bgImageFit === 'auto' && home.bgUrl) {
+      getAutoImageFit(home.bgUrl).then((fit) => {
+        setActualBg1ImageFit(fit);
+      });
+    } else {
+      setActualBg1ImageFit(bgImageFit);
+    }
+  }, [bgImageFit, home.bgUrl]);
+
+  // 智能判断第二壁纸的展示方式
+  React.useEffect(() => {
+    if (bg2ImageFit === 'auto' && home.bg2Url) {
+      getAutoImageFit(home.bg2Url).then((fit) => {
+        setActualBg2ImageFit(fit);
+      });
+    } else {
+      setActualBg2ImageFit(bg2ImageFit);
+    }
+  }, [bg2ImageFit, home.bg2Url]);
 
   React.useEffect(() => {
     if (!home.bgUrl) {
@@ -340,6 +417,24 @@ const FirstScreen = (props) => {
     }
   }, [home.isBg2])
 
+  // 获取待添加网址数量
+  React.useEffect(() => {
+    const loadPendingLinksCount = () => {
+      link.getPendingLinks().then((links) => {
+        setPendingLinksCount(links?.length || 0);
+      }).catch((err) => {
+        console.error("Failed to load pending links count:", err);
+        setPendingLinksCount(0);
+      });
+    };
+    loadPendingLinksCount();
+    // 定期刷新待添加网址数量
+    const interval = setInterval(() => {
+      loadPendingLinksCount();
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [link]);
+
   return (
     <>
       {bgImg}
@@ -399,12 +494,17 @@ const FirstScreen = (props) => {
         </LogoWrap>
         <NavRight>
           {location.pathname == '/' ? (
-            <Tooltip placement="bottom" title={"新增链接"}>
-              <Button
-                type="text"
-                onClick={() => (tools.tabListDrawer = true)}
-                icon={<IconCirclePlus size={22} stroke={1} />}
-              ></Button>
+            <Tooltip 
+              placement="bottom" 
+              title={pendingLinksCount > 0 ? `新增链接（${pendingLinksCount} 个待添加网址）` : "新增链接"}
+            >
+              <Badge count={pendingLinksCount > 0 ? pendingLinksCount : 0} offset={[-2, 2]}>
+                <Button
+                  type="text"
+                  onClick={() => (tools.tabListDrawer = true)}
+                  icon={<IconCirclePlus size={22} stroke={1} />}
+                ></Button>
+              </Badge>
             </Tooltip>
           ) : location.pathname == '/note' ? (
             <Tooltip placement="bottom" title={"新增便签"}>

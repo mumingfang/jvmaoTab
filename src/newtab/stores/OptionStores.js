@@ -15,7 +15,7 @@ import {
 
 const localStorageKeys = ['bgType', 'bg2Type', 'bgBase64', 'bg2Base64', 'webdavVersion'];
 
-const v = 13;
+const v = 14;
 const updateOptions = {
   1: {
     errData: '9527'
@@ -85,6 +85,10 @@ const updateOptions = {
     }],
     addMinNoteTabNum: 2,
     hasNoteTrash: false,
+  },
+  14: {
+    bgImageFit: 'cover',
+    bg2ImageFit: 'cover',
   }
 }
 

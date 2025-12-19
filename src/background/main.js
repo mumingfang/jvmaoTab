@@ -156,6 +156,20 @@ browserApi?.runtime?.onInstalled.addListener(function () {
     title: "将选中文本存储至便签",
     contexts: ["selection"], // 只在用户选中文本时显示这个菜单项
   });
+
+  // 创建一个右键菜单项，在网页上右键时显示
+  browserApi?.contextMenus?.create({
+    id: "bookmarkPageMenu",
+    title: "收藏网址到抽屉",
+    contexts: ["page"], // 在网页上右键时显示
+  });
+
+  // 创建一个右键菜单项，在扩展图标上右键时显示（Chrome MV3）
+  browserApi?.contextMenus?.create({
+    id: "bookmarkActionMenu",
+    title: "收藏当前页面到抽屉",
+    contexts: ["action"], // 在扩展图标上右键时显示
+  });
 });
 
 // 监听右键菜单项的点击事件
@@ -180,5 +194,45 @@ browserApi?.contextMenus?.onClicked.addListener(function (info, tab) {
         }, tab);
       }
     });
+  } else if (info.menuItemId === "bookmarkPageMenu" || info.menuItemId === "bookmarkActionMenu") {
+    // 处理收藏网址到抽屉
+    const savePendingLink = (url, title) => {
+      // 先尝试发送消息到 newtab 页面
+      browserApi?.runtime?.sendMessage({
+        type: "ADD_PENDING_LINK",
+        data: {
+          url: url,
+          title: title
+        }
+      }).catch(() => {
+        // 如果 newtab 页面未打开，使用 chrome.storage.local 作为后备存储
+        browserApi?.storage?.local?.get(['pendingLinks'], (result) => {
+          const pendingLinks = result.pendingLinks || [];
+          // 检查是否已存在相同的 URL
+          const exists = pendingLinks.find((link) => link.url === url);
+          if (!exists) {
+            pendingLinks.push({
+              url: url,
+              title: title,
+              timestamp: Date.now()
+            });
+            browserApi?.storage?.local?.set({ pendingLinks: pendingLinks });
+          }
+        });
+      });
+    };
+
+    // 如果是扩展图标右键，需要获取当前活动标签页
+    if (info.menuItemId === "bookmarkActionMenu") {
+      browserApi?.tabs?.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs.length > 0) {
+          const currentTab = tabs[0];
+          savePendingLink(currentTab.url, currentTab.title);
+        }
+      });
+    } else {
+      // 网页右键菜单，直接使用当前标签页信息
+      savePendingLink(info.pageUrl || tab.url, tab.title);
+    }
   }
 });

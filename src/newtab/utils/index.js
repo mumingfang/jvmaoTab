@@ -69,6 +69,9 @@ export const filterLinkList = (list = [], parentId = 0, newKey = false) => {
       if (!item.timeKey || newKey) {
         item = _.cloneDeep(v);
         item.timeKey = getID();
+      } else {
+        // 保留原有的 timeKey 和 linkId
+        item = _.cloneDeep(v);
       }
       if (parentId) {
         item.parentId = parentId;

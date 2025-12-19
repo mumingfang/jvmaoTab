@@ -14,7 +14,7 @@ const typeOption = [
 
 const PreferencesBG = () => {
     const { tools, option, home } = useStores();
-    const { bgType, bgUrl, bgBase64, bg2Type, bg2Url, bg2Base64, bgColor } = option.item;
+    const { bgType, bgUrl, bgBase64, bg2Type, bg2Url, bg2Base64, bgColor, bgImageFit = 'cover', bg2ImageFit = 'cover' } = option.item;
 
     const handleChange = (value) => {
         if (!value || typeof value !== 'object') {
@@ -59,6 +59,8 @@ const PreferencesBG = () => {
                 bg2Url,
                 bg2Base64,
                 bgColor,
+                bgImageFit,
+                bg2ImageFit,
             }}
             onValuesChange={handleChange}
         >
@@ -87,7 +89,21 @@ const PreferencesBG = () => {
                     <ColorSelect />
                 </Form.Item>
             )}
-
+            {bgType !== 'color' && (
+                <Form.Item label="壁纸展示方式" name='bgImageFit'>
+                    <Select
+                        size="large"
+                        style={{ width: '100%' }}
+                        options={[
+                            { value: 'auto', label: '智能判断（竖图用高100%，横图用填充）' },
+                            { value: 'cover', label: '填充（保持比例，裁剪多余部分）' },
+                            { value: 'width100', label: '宽100% 高自动' },
+                            { value: 'height100', label: '高100% 宽自动' },
+                            { value: 'center', label: '垂直居中平铺' },
+                        ]}
+                    />
+                </Form.Item>
+            )}
 
             <Divider />
 
@@ -111,6 +127,21 @@ const PreferencesBG = () => {
             {bg2Type === 'file' && (
                 <Form.Item label="上传图片" name='bg2Base64'>
                     <UploadImg hidden />
+                </Form.Item>
+            )}
+            {bg2Type !== 'null' && (
+                <Form.Item label="第二壁纸展示方式" name='bg2ImageFit'>
+                    <Select
+                        size="large"
+                        style={{ width: '100%' }}
+                        options={[
+                            { value: 'auto', label: '智能判断（竖图用高100%，横图用填充）' },
+                            { value: 'cover', label: '填充（保持比例，裁剪多余部分）' },
+                            { value: 'width100', label: '宽100% 高自动' },
+                            { value: 'height100', label: '高100% 宽自动' },
+                            { value: 'center', label: '垂直居中平铺' },
+                        ]}
+                    />
                 </Form.Item>
             )}
 

@@ -200,6 +200,20 @@ const Tower = ({ children }) => {
         sendResponse({ ok: true });
         return true; // 异步响应
       }
+      if (request.type === "ADD_PENDING_LINK" && request.data) {
+        const { url, title } = request.data;
+        if (url) {
+          link.addPendingLink(url, title).then(() => {
+            sendResponse({ ok: true });
+          }).catch((err) => {
+            console.error("[link] Failed to add pending link", err);
+            sendResponse({ ok: false, error: err.message });
+          });
+          return true; // 异步响应
+        }
+        sendResponse({ ok: false, error: "Missing URL" });
+        return true;
+      }
       return false;
     };
 
@@ -236,6 +250,37 @@ const Tower = ({ children }) => {
       processPendingFavicons();
     }, 30000);
 
+    // 处理暂存在 chrome.storage.local 中的待添加网址（来自 background）
+    const processPendingLinks = () => {
+      const runtime = typeof chrome !== "undefined" ? chrome : (typeof browser !== "undefined" ? browser : null);
+      if (runtime && runtime.storage && runtime.storage.local) {
+        runtime.storage.local.get(['pendingLinks'], (result) => {
+          const pending = result.pendingLinks || [];
+          if (pending.length > 0) {
+            // 批量添加待添加网址
+            Promise.all(pending.map((item) => {
+              if (item.url) {
+                return link.addPendingLink(item.url, item.title).catch((err) => {
+                  console.error("[link] Failed to add pending link from storage", err);
+                });
+              }
+              return Promise.resolve();
+            })).then(() => {
+              // 清空已处理的
+              runtime.storage.local.set({ pendingLinks: [] });
+            });
+          }
+        });
+      }
+    };
+
+    // 初始化时处理暂存的待添加网址
+    processPendingLinks();
+    // 定期检查暂存的待添加网址（每30秒）
+    const pendingLinksCheckInterval = setInterval(() => {
+      processPendingLinks();
+    }, 30000);
+
     // 定时清理任务：每2小时执行一次
     const cleanupInterval = setInterval(() => {
       cleanupUnusedFavicons();
@@ -252,6 +297,7 @@ const Tower = ({ children }) => {
       }
       clearInterval(cleanupInterval);
       clearInterval(pendingCheckInterval);
+      clearInterval(pendingLinksCheckInterval);
     };
   }, [cleanupUnusedFavicons]);
 

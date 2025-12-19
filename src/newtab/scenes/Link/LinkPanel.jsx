@@ -161,13 +161,77 @@ const LinkPanel = (props) => {
         sort: link.titleLink.length,
       });
 
-      newPanel.push(...filterLinkList(value, key, true));
-      link.list.push(...Array.from(newPanel));
+      // 对于待添加网址（有 timeKey），需要从数据库获取完整数据并直接更新
+      const processedValue = value.map((v) => {
+        if (v.timeKey) {
+          // 从数据库获取完整数据
+          return link.getLinkByTimeKey(v.timeKey).then((linkData) => {
+            if (linkData) {
+              // 如果是待添加网址（parentId === "000000"），直接更新数据库，不添加到列表
+              if (linkData.parentId === "000000") {
+                return link.addPendingLinksToGroup(v.timeKey, key).then(() => {
+                  // 更新成功，返回 null 表示不添加到列表（会通过刷新自动显示）
+                  return null;
+                }).catch((err) => {
+                  console.error("Failed to update pending link:", err);
+                  return null;
+                });
+              }
+              // 返回合并后的数据
+              return {
+                ...linkData,
+                ...v,
+                linkId: linkData.linkId,
+                parentId: key, // 更新为新分组的 parentId
+              };
+            }
+            return v;
+          }).catch((err) => {
+            console.error("addPanelToLinkItem error:", err);
+            return v;
+          });
+        }
+        return Promise.resolve(v);
+      });
+      
+      Promise.all(processedValue).then((resolvedValue) => {
+        // 分离待添加网址（返回 null 的）和普通链接
+        const pendingPromises = [];
+        const validItems = [];
+        
+        resolvedValue.forEach((v, index) => {
+          if (v === null) {
+            // 这是待添加网址，已经更新到数据库，需要从数据库获取更新后的数据
+            const originalItem = value[index];
+            if (originalItem && originalItem.timeKey) {
+              pendingPromises.push(
+                link.getLinkByTimeKey(originalItem.timeKey).then((updatedLink) => {
+                  if (updatedLink && updatedLink.parentId === key) {
+                    return updatedLink;
+                  }
+                  return null;
+                }).catch(() => null)
+              );
+            }
+          } else {
+            validItems.push(v);
+          }
+        });
+        
+        // 等待所有待添加网址更新完成
+        Promise.all(pendingPromises).then((updatedPendingLinks) => {
+          // 将更新后的待添加网址添加到 validItems
+          const allValidItems = [...validItems, ...updatedPendingLinks.filter(v => v !== null)];
+          
+          newPanel.push(...filterLinkList(allValidItems, key, false));
+          link.list.push(...Array.from(newPanel));
 
-      onChange(link.list);
-      state.isChange = false;
+          onChange(link.list);
+          state.isChange = false;
+        });
+      });
     },
-    [link.getActiveID, link.titleLink.length, onChange]
+    [link.getActiveID, link.titleLink.length, onChange, link]
   );
 
   // 复制全部网页
@@ -221,14 +285,78 @@ const LinkPanel = (props) => {
             setList={(value) => {
               if (state.updateList[item.timeKey]) {
                 state.isChange = true;
-                Promise.resolve().then(() => {
-                  setLinkItem(
-                    item.timeKey,
-                    filterLinkList(value, item.timeKey)
-                  );
-                  state.updateList[item.timeKey] = false;
+                // 找出新增的项（待添加网址）
+                const currentTimeKeys = new Set(list.map(l => l.timeKey));
+                const newItems = value.filter(v => v.timeKey && !currentTimeKeys.has(v.timeKey));
+                
+                // 对于新增的待添加网址，先更新数据库，然后从 value 中移除（避免重复添加）
+                const updatePromises = newItems.map((newItem) => {
+                  if (newItem.timeKey) {
+                    return link.getLinkByTimeKey(newItem.timeKey).then((linkData) => {
+                      if (linkData && linkData.parentId === "000000") {
+                        // 直接更新数据库
+                        return link.addPendingLinksToGroup(newItem.timeKey, item.timeKey).then(() => {
+                          // 更新成功后，从数据库中重新获取更新后的数据
+                          return link.getLinkByTimeKey(newItem.timeKey);
+                        }).catch((err) => {
+                          console.error("Failed to update pending link:", err);
+                          return null;
+                        });
+                      }
+                      return linkData;
+                    }).catch((err) => {
+                      console.error("Error fetching linkData:", err);
+                      return null;
+                    });
+                  }
+                  return Promise.resolve(null);
                 });
-
+                
+                Promise.all(updatePromises).then((updatedLinks) => {
+                  // 将成功更新的待添加网址添加到 value 中，替换原来的项
+                  const successfullyUpdated = updatedLinks.filter(ul => ul && ul.parentId === item.timeKey);
+                  
+                  // 用更新后的数据替换 value 中的待添加网址
+                  const replacedValue = value.map((v) => {
+                    const updated = updatedLinks.find(ul => ul && ul.timeKey === v.timeKey);
+                    if (updated && updated.parentId === item.timeKey) {
+                      // 用更新后的数据替换
+                      return updated;
+                    }
+                    return v;
+                  });
+                  
+                  // 处理所有项，确保数据完整
+                  const processedValue = replacedValue.map((v) => {
+                    if (v.timeKey) {
+                      // 如果已经是更新后的数据（有 linkId 和正确的 parentId），直接返回
+                      if (v.linkId && v.parentId === item.timeKey) {
+                        return Promise.resolve(v);
+                      }
+                      // 否则从数据库获取
+                      return link.getLinkByTimeKey(v.timeKey).then((linkData) => {
+                        if (linkData) {
+                          return {
+                            ...linkData,
+                            ...v,
+                            linkId: linkData.linkId,
+                            parentId: item.timeKey,
+                          };
+                        }
+                        return v;
+                      }).catch(() => v);
+                    }
+                    return Promise.resolve(v);
+                  });
+                  
+                  Promise.all(processedValue).then((resolvedValue) => {
+                    setLinkItem(
+                      item.timeKey,
+                      filterLinkList(resolvedValue, item.timeKey, false)
+                    );
+                    state.updateList[item.timeKey] = false;
+                  });
+                });
               }
             }}
             onStart={(e) => {

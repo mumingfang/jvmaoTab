@@ -157,15 +157,22 @@ export default class LinkStore {
     const field = ["title", "url", "parentId", "sort"];
     const update = links.map((v) => {
       if (!v.linkId) {
-        db.link
+        // 如果没有 linkId，先查询获取
+        return db.link
           .where("timeKey")
           .equals(v.timeKey)
-          .toArray()
-          .then((i) => {
-            if (i.length > 0) {
-              v.linkId = i[0].linkId;
-              return db.link.update(v.linkId, _.pick(v, field));
+          .first()
+          .then((linkData) => {
+            if (linkData && linkData.linkId) {
+              return db.link.update(linkData.linkId, _.pick(v, field));
+            } else {
+              console.warn("updateLink: link not found for timeKey", v.timeKey);
+              return Promise.resolve();
             }
+          })
+          .catch((err) => {
+            console.error("updateLink: error fetching linkId", err);
+            return Promise.resolve();
           });
       } else {
         return db.link.update(v.linkId, _.pick(v, field));
@@ -374,6 +381,125 @@ export default class LinkStore {
       this.init();
     }
     this.rootStore.option.init();
+  }
+
+  // 获取待添加网址列表（parentId 为 "000000"）
+  getPendingLinks() {
+    return new Promise((resolve, reject) => {
+      db.link
+        .where("parentId")
+        .equals("000000")
+        .toArray()
+        .then((res) => {
+          resolve(res || []);
+        })
+        .catch((err) => {
+          console.error("getPendingLinks", err);
+          reject(err);
+        });
+    });
+  }
+
+  // 添加待添加网址
+  addPendingLink(url, title) {
+    return new Promise((resolve, reject) => {
+      // 检查是否已存在相同的 URL
+      db.link
+        .where("parentId")
+        .equals("000000")
+        .and((link) => link.url === url)
+        .first()
+        .then((existing) => {
+          if (existing) {
+            // 如果已存在，直接返回
+            resolve(existing);
+            return;
+          }
+          // 获取当前待添加网址的数量，用于设置 sort
+          this.getPendingLinks().then((pendingLinks) => {
+            const newLink = {
+              title: title || url,
+              url: url,
+              parentId: "000000",
+              sort: pendingLinks.length,
+              timeKey: getID(),
+              hide: false,
+            };
+            db.link
+              .put(newLink)
+              .then((res) => {
+                this.rootStore.data.update();
+                resolve(res);
+              })
+              .catch((err) => {
+                console.error("addPendingLink", err);
+                reject(err);
+              });
+          });
+        })
+        .catch((err) => {
+          console.error("addPendingLink check", err);
+          reject(err);
+        });
+    });
+  }
+
+  // 删除待添加网址
+  removePendingLink(timeKey) {
+    return new Promise((resolve, reject) => {
+      db.link
+        .where("timeKey")
+        .equals(timeKey)
+        .and((link) => link.parentId === "000000")
+        .delete()
+        .then((res) => {
+          this.rootStore.data.update();
+          resolve(res);
+        })
+        .catch((err) => {
+          console.error("removePendingLink", err);
+          reject(err);
+        });
+    });
+  }
+
+  // 将待添加网址添加到指定分组
+  addPendingLinksToGroup(timeKey, parentId) {
+    return new Promise((resolve, reject) => {
+      db.link
+        .where("timeKey")
+        .equals(timeKey)
+        .and((link) => link.parentId === "000000")
+        .first()
+        .then((link) => {
+          if (!link) {
+            reject(new Error("Link not found"));
+            return;
+          }
+          // 获取目标分组的链接数量，用于设置 sort
+          this.getLinkByParentId([parentId]).then((links) => {
+            const updatedLink = {
+              ...link,
+              parentId: parentId,
+              sort: links.length,
+            };
+            db.link
+              .update(link.linkId, updatedLink)
+              .then((res) => {
+                this.rootStore.data.update();
+                resolve(res);
+              })
+              .catch((err) => {
+                console.error("addPendingLinksToGroup", err);
+                reject(err);
+              });
+          });
+        })
+        .catch((err) => {
+          console.error("addPendingLinksToGroup", err);
+          reject(err);
+        });
+    });
   }
 
 }
