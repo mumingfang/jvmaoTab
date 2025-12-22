@@ -7,10 +7,10 @@ import { motion } from "framer-motion";
 import useStores from "~/hooks/useStores";
 import useDebounce from "~/hooks/useDebounce";
 import { useMemoizedFn } from "ahooks";
-import { IconAppWindow, IconPlus, IconBookmark } from "@tabler/icons-react";
+import { IconAppWindow, IconPlus, IconBookmark, IconInfoCircle } from "@tabler/icons-react";
 import { ExclamationCircleFilled } from "@ant-design/icons";
 import styled from "styled-components";
-import { Button, Modal, Empty } from "antd";
+import { Button, Modal, Empty, Tooltip } from "antd";
 
 const chrome = window.chrome;
 Sortable.mount(new MultiDrag());
@@ -46,6 +46,15 @@ const PendingLinksTitle = styled.div`
   display: flex;
   align-items: center;
   gap: 6px;
+`;
+
+const InfoIcon = styled(IconInfoCircle)`
+  cursor: help;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  &:hover {
+    opacity: 1;
+  }
 `;
 
 
@@ -172,7 +181,7 @@ const TabList = (props) => {
     // 监听 link.list 的变化，当有新的待添加网址时刷新
     const interval = setInterval(() => {
       loadPendingLinks();
-    }, 1000);
+    }, 300); // 缩短刷新间隔，从 1000ms 改为 300ms
     return () => clearInterval(interval);
   }, [loadPendingLinks, link.list]);
 
@@ -196,6 +205,9 @@ const TabList = (props) => {
           <PendingLinksTitle>
             <IconBookmark size={14} />
             <span>待添加网址 ({pendingLinks.length})</span>
+            <Tooltip title="这些是通过右键菜单收藏的网址，拖拽到分组即可添加到对应分组">
+              <InfoIcon size={14} />
+            </Tooltip>
           </PendingLinksTitle>
           <ReactSortable
             style={{

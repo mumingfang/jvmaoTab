@@ -207,6 +207,9 @@ const LinkPanel = (props) => {
               pendingPromises.push(
                 link.getLinkByTimeKey(originalItem.timeKey).then((updatedLink) => {
                   if (updatedLink && updatedLink.parentId === key) {
+                    // 先添加到 link.list 和 cacheList，避免 diff 认为它是新项
+                    link.list.push(updatedLink);
+                    link.setCache();
                     return updatedLink;
                   }
                   return null;
@@ -313,8 +316,14 @@ const LinkPanel = (props) => {
                 });
                 
                 Promise.all(updatePromises).then((updatedLinks) => {
-                  // 将成功更新的待添加网址添加到 value 中，替换原来的项
+                  // 将成功更新的待添加网址先添加到 link.list 和 cacheList，避免 diff 认为它是新项
                   const successfullyUpdated = updatedLinks.filter(ul => ul && ul.parentId === item.timeKey);
+                  if (successfullyUpdated.length > 0) {
+                    // 先添加到 link.list
+                    link.list.push(...successfullyUpdated);
+                    // 立即更新 cacheList，这样 updateData 的 diff 会认为它是更新而不是新增
+                    link.setCache();
+                  }
                   
                   // 用更新后的数据替换 value 中的待添加网址
                   const replacedValue = value.map((v) => {
