@@ -4,8 +4,9 @@ import { observer } from "mobx-react";
 import useStores from "~/hooks/useStores";
 import { Card, Typography, Tooltip } from "antd";
 import FavIconIcon from "~/scenes/public/FavIconIcon";
-import { IconPencilMinus, IconCopy, IconTrashX } from "@tabler/icons-react";
+import { IconPencilMinus, IconCopy, IconTrashX, IconRefresh } from "@tabler/icons-react";
 import { writeText, isSpecialProtocol, openUrl } from "~/utils";
+import { refreshFaviconForUrl } from "~/utils/favicon";
 
 
 
@@ -75,6 +76,52 @@ const LinkItem = (props) => {
     // 如果不是特殊协议，让默认行为继续（保持原生行为）
   }, [props.url, small, linkOpenSelf]);
 
+  const onRefreshIcon = useMemoizedFn(async () => {
+    if (!props.url) {
+      return;
+    }
+    
+    try {
+      let origin;
+      try {
+        origin = new URL(props.url).origin;
+      } catch (e) {
+        tools.messageApi.open({
+          type: "error",
+          content: "无效的 URL",
+          duration: 2,
+        });
+        return;
+      }
+
+      tools.messageApi.open({
+        type: "info",
+        content: "正在重新获取图标...",
+        duration: 1,
+      });
+      
+      await refreshFaviconForUrl(props.url);
+      
+      // 触发全局事件通知图标已刷新
+      window.dispatchEvent(new CustomEvent('faviconRefreshed', {
+        detail: { origin }
+      }));
+      
+      tools.messageApi.open({
+        type: "success",
+        content: "图标已更新",
+        duration: 2,
+      });
+    } catch (error) {
+      console.error("[favicon] Failed to refresh icon", error);
+      tools.messageApi.open({
+        type: "error",
+        content: "重新获取图标失败",
+        duration: 2,
+      });
+    }
+  }, [props.url, tools]);
+
   const onContextMenu = useMemoizedFn((e) => {
     e.stopPropagation();
     e.preventDefault();
@@ -109,6 +156,14 @@ const LinkItem = (props) => {
         }
       },
       {
+        label: "重新获取图标",
+        icon: <IconRefresh />,
+        key: "refresh-icon",
+        onClick: () => {
+          onRefreshIcon();
+        },
+      },
+      {
         label: "删除链接",
         icon: <IconTrashX />,
         key: "del-link",
@@ -117,7 +172,7 @@ const LinkItem = (props) => {
         },
       },
     ]);
-  }, [props.url, props.title, props.timeKey, props.linkId, small, tools, onCopy, onDelete]);
+  }, [props.url, props.title, props.timeKey, props.linkId, small, tools, onCopy, onDelete, onRefreshIcon]);
 
   const item = useCreation(() => {
     // console.log("刷新视图 - 链接");

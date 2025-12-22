@@ -1,5 +1,12 @@
 const updateRecords = [
     {
+        version: "1.3.6",
+        items: [
+            "修复: 暗黑模式favicon图标显示问题",
+            "新增: 支持重新获取链接图标",
+        ]
+    },
+    {
         version: "1.3.5",
         items: [
             "新增: 支持根据图片尺寸智能判断壁纸展示方式",

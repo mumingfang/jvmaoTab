@@ -101,15 +101,28 @@ const detectFaviconFromUrl = async (url) => {
     const faviconLinks = links.filter((link) => relRegex.test(link.rel || ""));
 
     const candidates = [];
+    let darkFaviconUrl = null;
 
-    // 来自 <link> 的候选
+    // 来自 <link> 的候选 - 同时收集正常和暗黑模式图标
     faviconLinks.forEach((link) => {
       try {
         const href = link.getAttribute("href");
         if (!href) return;
         const absUrl = new URL(href, url).href;
         const size = parseSize(link.getAttribute("sizes"));
-        candidates.push({ url: absUrl, size: size || null });
+        const media = link.getAttribute("media") || "";
+        
+        // 检查是否是暗黑模式 favicon（通过 media 属性）
+        const isDark = /prefers-color-scheme:\s*dark/i.test(media);
+        if (isDark) {
+          // 保存暗黑模式图标（如果有多个，取第一个）
+          if (!darkFaviconUrl) {
+            darkFaviconUrl = absUrl;
+          }
+        } else {
+          // 正常模式图标，加入候选列表
+          candidates.push({ url: absUrl, size: size || null });
+        }
       } catch (e) {
         // ignore
       }
@@ -129,10 +142,25 @@ const detectFaviconFromUrl = async (url) => {
     const withParsedSize = candidates.filter((c) => typeof c.size === "number");
     if (withParsedSize.length > 0) {
       const best = chooseBestIcon(withParsedSize);
+      const normalIconUrl = best.url;
+      const iconSize = best.size || null;
+
+      // 只存储从 HTML 解析到的实际图片 URL，不存储 Chrome API URL
+      // Chrome 的 _favicon API 只在显示时动态生成，不存储到数据库
+      const finalDarkIconUrl = darkFaviconUrl || null;
+
+      console.log("[favicon] detectFaviconFromUrl: final result (withParsedSize path)", {
+        domain: origin,
+        iconUrl: normalIconUrl,
+        iconUrlDark: finalDarkIconUrl,
+        size: iconSize,
+      });
+
       return {
         domain: origin,
-        iconUrl: best.url,
-        size: best.size || null,
+        iconUrl: normalIconUrl,
+        iconUrlDark: finalDarkIconUrl, // 只返回从 HTML 解析到的暗黑模式图标 URL
+        size: iconSize,
       };
     }
 
@@ -152,9 +180,15 @@ const detectFaviconFromUrl = async (url) => {
 
     if (loaded.length === 0) {
       // 如果都加载失败，至少返回第一个候选 URL
+      const fallbackIconUrl = candidates[0]?.url || null;
+      
+      // 只存储从 HTML 解析到的实际图片 URL，不存储 Chrome API URL
+      const finalDarkIconUrl = darkFaviconUrl || null;
+      
       return {
         domain: origin,
-        iconUrl: candidates[0].url,
+        iconUrl: fallbackIconUrl,
+        iconUrlDark: finalDarkIconUrl,
         size: null,
       };
     }
@@ -162,10 +196,25 @@ const detectFaviconFromUrl = async (url) => {
     const best = chooseBestIcon(loaded);
     if (!best) return null;
 
+    const normalIconUrl = best.url;
+    const iconSize = best.size || null;
+
+    // 只存储从 HTML 解析到的实际图片 URL，不存储 Chrome API URL
+    // Chrome 的 _favicon API 只在显示时动态生成，不存储到数据库
+    const finalDarkIconUrl = darkFaviconUrl || null;
+
+    console.log("[favicon] detectFaviconFromUrl: final result (loaded path)", {
+      domain: origin,
+      iconUrl: normalIconUrl,
+      iconUrlDark: finalDarkIconUrl,
+      size: iconSize,
+    });
+
     return {
       domain: origin,
-      iconUrl: best.url,
-      size: best.size || null,
+      iconUrl: normalIconUrl,
+      iconUrlDark: finalDarkIconUrl, // 只返回从 HTML 解析到的暗黑模式图标 URL
+      size: iconSize,
     };
   } catch (error) {
     console.warn("[favicon] detectFaviconFromUrl: error occurred", error);
@@ -173,15 +222,105 @@ const detectFaviconFromUrl = async (url) => {
     try {
       const fallback = new URL("/favicon.ico", url).href;
       console.log("[favicon] detectFaviconFromUrl: using fallback /favicon.ico", fallback);
+      
+      // fallback 时没有暗黑模式图标（因为没有解析 HTML），返回 null
+      // Chrome 的 _favicon API 会在显示时动态生成，不存储到数据库
       return {
         domain: origin,
         iconUrl: fallback,
+        iconUrlDark: null,
         size: null,
       };
     } catch (e) {
       console.error("[favicon] detectFaviconFromUrl: fallback also failed", e);
       return null;
     }
+  }
+};
+
+// 获取 Chrome 暗黑模式图标 URL（如果可用）
+const getChromeDarkFaviconUrl = (rawUrl, size = 128) => {
+  // 只在 Chrome 浏览器中使用
+  if (typeof chrome === "undefined" || !chrome.runtime || !chrome.runtime.getURL) {
+    console.log("[favicon] getChromeDarkFaviconUrl: Chrome API not available");
+    return null;
+  }
+
+  try {
+    // Chrome 的 _favicon API 可以使用 origin 或完整 URL 作为 pageUrl 参数
+    // 根据 Chrome 文档，使用完整的 URL 可能更准确，特别是对于有路径的页面
+    const pageUrl = new URL(rawUrl);
+    const faviconUrl = new URL(chrome.runtime.getURL("/_favicon/"));
+    // 使用完整的 URL 作为 pageUrl，这样 Chrome 可以更准确地识别页面并返回对应的图标
+    faviconUrl.searchParams.set("pageUrl", rawUrl);
+    faviconUrl.searchParams.set("size", size * 2);
+    faviconUrl.searchParams.set("darkScheme", "true");
+    const resultUrl = faviconUrl.toString();
+    console.log("[favicon] getChromeDarkFaviconUrl: created dark icon URL", resultUrl, "for", rawUrl);
+    // 确保返回的是有效的 URL 字符串
+    if (resultUrl && resultUrl.startsWith("chrome-extension://")) {
+      return resultUrl;
+    } else {
+      console.warn("[favicon] getChromeDarkFaviconUrl: invalid URL format", resultUrl);
+      return null;
+    }
+  } catch (error) {
+    console.warn("[favicon] getChromeDarkFaviconUrl: failed to create URL", error, rawUrl);
+    return null;
+  }
+};
+
+// 强制刷新 favicon（忽略时间限制）
+export const refreshFaviconForUrl = async (url) => {
+  if (!url) {
+    console.log("[favicon] refreshFaviconForUrl: url is empty");
+    return;
+  }
+
+  let origin;
+  try {
+    origin = new URL(url).origin;
+    console.log("[favicon] refreshFaviconForUrl: processing", url, "origin:", origin);
+  } catch (e) {
+    console.error("[favicon] refreshFaviconForUrl: invalid URL", url, e);
+    return;
+  }
+
+  // 直接获取，不检查时间限制
+  let data;
+  try {
+    data = await detectFaviconFromUrl(url);
+    console.log("[favicon] refreshFaviconForUrl: detectFaviconFromUrl result", data);
+  } catch (e) {
+    console.error("[favicon] refreshFaviconForUrl: detectFaviconFromUrl failed", e);
+    data = null;
+  }
+
+  if (!data || !data.iconUrl) {
+    console.warn("[favicon] refreshFaviconForUrl: no favicon data found for", url);
+    return;
+  }
+
+  // 确保域名一致再写入
+  if (data.domain && data.domain === origin) {
+    try {
+      const iconUrlDark = data.iconUrlDark || null;
+      await saveFavicon({
+        domain: origin,
+        iconUrl: data.iconUrl,
+        iconUrlDark: iconUrlDark,
+        size: data.size || null,
+      });
+      console.log("[favicon] refreshFaviconForUrl: refreshed and saved to DB", origin, {
+        normal: data.iconUrl,
+        dark: iconUrlDark || "not available (will use normal icon as fallback)"
+      });
+    } catch (e) {
+      console.error("[favicon] refreshFaviconForUrl: failed to save to DB", e);
+      throw e;
+    }
+  } else {
+    console.warn("[favicon] refreshFaviconForUrl: domain mismatch", data.domain, "vs", origin);
   }
 };
 
@@ -201,14 +340,25 @@ export const ensureFaviconForUrl = async (url) => {
     return;
   }
 
-  // 先查表，已有记录则不做任何事
+  // 先查表，已有记录则检查是否需要更新（超过一天则允许覆盖）
   try {
     const exist = await getFavicon(origin);
     if (exist && exist.iconUrl) {
-      console.log("[favicon] ensureFaviconForUrl: already exists in DB", origin);
-      return;
+      // 检查 lastUpdate 时间，如果超过 24 小时（86400000 毫秒），允许重新获取
+      const oneDayInMs = 24 * 60 * 60 * 1000; // 24 小时
+      const now = Date.now();
+      const lastUpdate = exist.lastUpdate || 0;
+      
+      if (now - lastUpdate < oneDayInMs) {
+        console.log("[favicon] ensureFaviconForUrl: already exists in DB (within 24h)", origin);
+        return; // 24 小时内，不重新获取
+      }
+      
+      console.log("[favicon] ensureFaviconForUrl: record exists but outdated (>24h), will refresh", origin);
+      // 超过 24 小时，继续执行后续的获取逻辑来更新
+    } else {
+      console.log("[favicon] ensureFaviconForUrl: not found in DB, will fetch", origin);
     }
-    console.log("[favicon] ensureFaviconForUrl: not found in DB, will fetch", origin);
   } catch (e) {
     console.error("[favicon] ensureFaviconForUrl: error checking DB", e);
   }
@@ -231,12 +381,18 @@ export const ensureFaviconForUrl = async (url) => {
   // 确保域名一致再写入
   if (data.domain && data.domain === origin) {
     try {
+      // detectFaviconFromUrl 已经同时获取了正常和暗黑模式图标
+      // 直接使用返回的结果保存
       await saveFavicon({
         domain: origin,
-        iconUrl: data.iconUrl,
+        iconUrl: data.iconUrl,          // 正常模式图标
+        iconUrlDark: data.iconUrlDark || null,  // 暗黑模式图标（可能为 null）
         size: data.size || null,
       });
-      console.log("[favicon] ensureFaviconForUrl: saved to DB", origin, data.iconUrl);
+      console.log("[favicon] ensureFaviconForUrl: saved to DB", origin, {
+        normal: data.iconUrl,
+        dark: data.iconUrlDark || "not available"
+      });
     } catch (e) {
       console.error("[favicon] ensureFaviconForUrl: failed to save to DB", e);
     }

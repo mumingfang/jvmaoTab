@@ -16,7 +16,8 @@ export const db = new Dexie("jvmao-tab");
 // - favicon 表按域名（origin）存储站点图标，仅在链接真正被保存到抽屉时写入。
 // - 字段：
 //   - domain: 站点域名（new URL(url).origin），作为主键，避免重复存储同一站点的 favicon；
-//   - iconUrl: 选中的 favicon 绝对地址或 dataURL；
+//   - iconUrl: 选中的 favicon 绝对地址或 dataURL（正常模式）；
+//   - iconUrlDark: 暗黑模式的 favicon 绝对地址或 dataURL（可选）；
 //   - size: 图标实际尺寸（如 naturalWidth，通常接近 128）；
 //   - lastUpdate: 更新时间戳，后续若需要可做刷新策略。
 
@@ -40,6 +41,23 @@ db.version(2).stores({
 }).upgrade((transaction) => {
   // favicon 表为新表，无需迁移数据
   return Promise.resolve(true);
+});
+
+// 版本 3：favicon 表新增 iconUrlDark 字段（暗黑模式图标）
+db.version(3).stores({
+  link: "++linkId,title,url,&timeKey,sort,parentId,hide",
+  option: "++id,&key,value",
+  note: "++id,content,createTime,updateTime,fromUrl,sort,state",
+  cache: "++id,&key,value",
+  favicon: "&domain,iconUrl,iconUrlDark,size,lastUpdate",
+}).upgrade((transaction) => {
+  // 升级现有数据：为已有记录添加 iconUrlDark 字段（设为 null）
+  const faviconTable = transaction.table("favicon");
+  return faviconTable.toCollection().modify((favicon) => {
+    if (typeof favicon.iconUrlDark === "undefined") {
+      favicon.iconUrlDark = null;
+    }
+  });
 });
 
 
@@ -80,7 +98,7 @@ export const getFavicon = async (domain) => {
   }
 };
 
-export const saveFavicon = async ({ domain, iconUrl, size }) => {
+export const saveFavicon = async ({ domain, iconUrl, iconUrlDark = null, size }) => {
   if (!domain || !iconUrl) {
     console.warn("[favicon] saveFavicon: missing domain or iconUrl", { domain, iconUrl });
     return Promise.resolve(undefined);
@@ -90,16 +108,26 @@ export const saveFavicon = async ({ domain, iconUrl, size }) => {
     if (!db.isOpen()) {
       await db.open();
     }
+    
+    // 不存储 chrome-extension:// 这种扩展内部 API URL
+    // Chrome 的 _favicon API 只在显示时动态生成，不存储到数据库
+    let finalIconUrlDark = iconUrlDark;
+    if (finalIconUrlDark && typeof finalIconUrlDark === "string" && finalIconUrlDark.startsWith("chrome-extension://")) {
+      console.warn("[favicon] saveFavicon: rejecting chrome-extension:// URL for iconUrlDark", finalIconUrlDark);
+      finalIconUrlDark = null;
+    }
+    
     const result = await db.favicon.put({
       domain,
       iconUrl,
+      iconUrlDark: finalIconUrlDark || null,
       size: size || null,
       lastUpdate: Date.now(),
     });
-    console.log("[favicon] saveFavicon: saved", domain, iconUrl, result);
+    console.log("[favicon] saveFavicon: saved", domain, iconUrl, finalIconUrlDark, result);
     return result;
   } catch (e) {
-    console.error("[favicon] saveFavicon error", e, { domain, iconUrl, size });
+    console.error("[favicon] saveFavicon error", e, { domain, iconUrl, iconUrlDark, size });
     throw e;
   }
 };
