@@ -1,5 +1,13 @@
 const updateRecords = [
     {
+        version: "1.3.7",
+        items: [
+            "新增: 首屏支持切换一张bing壁纸",
+            "修复: 搜索居中选项设置问题",
+            "优化: 整体性能优化",
+        ]
+    },
+    {
         version: "1.3.6",
         items: [
             "修复: 暗黑模式favicon图标显示问题",
