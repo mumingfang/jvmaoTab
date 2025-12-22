@@ -9,6 +9,8 @@
     "build": "vite build",
     "build:firefox": "cross-env TARGET=firefox vite build",
     "lint": "eslint src --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "lint:warn": "eslint src --ext js,jsx || true",
+    "format": "prettier --check \"src/**/*.{js,jsx,scss}\"",
     "preview": "vite preview"
   },
   "dependencies": {

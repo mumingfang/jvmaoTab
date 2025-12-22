@@ -157,7 +157,7 @@ export default class OptionStores {
                     equation = _.isEqual(this.item[key], v);
                     break;
                   default:
-                    equation = this.item[key] == v
+                    equation = this.item[key] === v;
                     break;
                 }
 
@@ -167,7 +167,7 @@ export default class OptionStores {
               }
             }
 
-            if (this.item["v"] != v) {
+            if (this.item["v"] !== v) {
               this.update(this.item["v"] || 0);
             }
             this.rootStore.data.init();

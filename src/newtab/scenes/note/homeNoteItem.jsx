@@ -66,7 +66,7 @@ const NoteHeader = styled.div`
     align-items: center;
     color: #666;
     svg {
-        ttansition: opacity 0.3s;
+        transition: opacity 0.3s;
         opacity: 0;
     }
 `
@@ -78,7 +78,7 @@ const CloseBtn = styled(Button)`
     z-index: 3;
     top: 0;
     right: 0;
-    ttansition: opacity 0.3s;
+    transition: opacity 0.3s;
         opacity: 0;
 `;
 const Tentacle = styled.div`
@@ -179,50 +179,38 @@ const HomeNoteItem = (props) => {
                 }
             }
         } catch (error) {
-            console.log('%c [ error ]-52', 'font-size:13px; background:pink; color:#bf2c9f;', error)
+            console.error('编辑器事件处理失败:', error)
         }
     });
 
     const { run: debouncedRun } = useDebounceFn((x, y) => {
-        setPosition({ x: x + position.x, y: y + position.y });
+        setPosition((prev) => {
+            const newX = x + prev.x;
+            const newY = y + prev.y;
+            saveNotePosition(kId, newX, newY);
+            return { x: newX, y: newY };
+        });
         setTransformPosition({ x: 0, y: 0 });
-        saveNotePosition(kId, x + position.x, y + position.y);
-    }, { wait: 100 })
+    }, { wait: 100 });
 
-    const onContextMenu = React.useCallback((e, id) => {
+    const onContextMenu = React.useCallback((e) => {
         e.stopPropagation();
         e.preventDefault();
-        tools.setRightClickEvent(e, [
-            {
-                label: "时间胶囊 - 周",
-                icon: <IconCapsuleHorizontal />,
-                disabled: !v.id,
-                key: "del-group",
-                onClick: () => note.setTimeCapsule(kId),
-            },
-            {
-                label: "时间胶囊 - 月",
-                icon: <IconCapsuleHorizontal />,
-                disabled: !v.id,
-                key: "del-group",
-                onClick: () => note.setTimeCapsule(kId, 'month'),
-            },
-            {
-                label: "时间胶囊 - 半年",
-                icon: <IconCapsuleHorizontal />,
-                disabled: !v.id,
-                key: "del-group",
-                onClick: () => note.setTimeCapsule(kId, 'half-year'),
-            },
-            {
-                label: "时间胶囊 - 年",
-                icon: <IconCapsuleHorizontal />,
-                disabled: !v.id,
-                key: "del-group",
-                onClick: () => note.setTimeCapsule(kId, 'year'),
-            },
-        ]);
-    }, []);
+        const timeCapsuleOptions = [
+            { label: "时间胶囊 - 周", timeType: "week" },
+            { label: "时间胶囊 - 月", timeType: "month" },
+            { label: "时间胶囊 - 半年", timeType: "half-year" },
+            { label: "时间胶囊 - 年", timeType: "year" },
+        ];
+        
+        tools.setRightClickEvent(e, timeCapsuleOptions.map((option) => ({
+            label: option.label,
+            icon: <IconCapsuleHorizontal />,
+            disabled: !v.id,
+            key: `capsule-${option.timeType}`,
+            onClick: () => note.setTimeCapsule(kId, option.timeType),
+        })));
+    }, [tools, note, kId, v.id]);
 
     React.useEffect(() => {
         if (v.id > 0) {
@@ -233,18 +221,21 @@ const HomeNoteItem = (props) => {
             }).catch((err) => {
                 if (err.name === "DatabaseClosedError") {
                     window.location.reload();
-                  }
+                    return;
+                }
                 tools.error('获取便签失败');
                 console.error("findNote", err);
-            })
+            });
         } else if (v.id === 0) {
             setText('');
         }
 
-        setTimeout(() => {
+        const timer = setTimeout(() => {
             setLoading(false);
         }, 200);
-    }, [])
+        
+        return () => clearTimeout(timer);
+    }, [v.id, note, tools])
 
     React.useEffect(() => {
         if (transform) {
@@ -255,15 +246,15 @@ const HomeNoteItem = (props) => {
         } else {
             debouncedRun(transformPosition.x, transformPosition.y);
         }
-    }, [transform]);
+    }, [transform, debouncedRun, transformPosition]);
 
     React.useEffect(() => {
-        if (type == 'capsule' && time && dayjs().isAfter(time)) {
+        if (type === 'capsule' && time && dayjs().isAfter(time)) {
             setShowCapsule(true);
         }
-    }, [type, time])
+    }, [type, time]);
 
-    if (type == 'capsule' && !showCapsule) {
+    if (type === 'capsule' && !showCapsule) {
         return null;
     }
 
@@ -301,7 +292,7 @@ const HomeNoteItem = (props) => {
                             onClick={() => removeNote(kId)}
                             size="small"
                             type={"text"}
-                            tabindex="-1"
+                            tabIndex="-1"
                             icon={<IconX size={16} stroke={1.4} />}
                         />
                         <Editor event={editorEvent$} content={text} />

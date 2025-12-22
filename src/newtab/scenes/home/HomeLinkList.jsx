@@ -44,7 +44,7 @@ const SortableWrapper = React.forwardRef((props, ref) => {
   return <SortableContainer ref={ref}>{props.children}</SortableContainer>;
 });
 
-const HomeLinkList = (props) => {
+const HomeLinkListComponent = (props) => {
   const { homeLink, homeLinkTimeKey, isSoBarDown, stickled, showHomeLink } = props;
   const { link } = useStores();
   const [linkList, setLinkList] = React.useState([]);
@@ -120,5 +120,7 @@ const HomeLinkList = (props) => {
   );
 };
 
-export default observer(HomeLinkList);
+const HomeLinkList = React.memo(observer(HomeLinkListComponent));
+
+export default HomeLinkList;
 

@@ -243,7 +243,7 @@ const NoteHome = (props) => {
         const { homeNoteData } = option.item;
         const ids = (homeNoteData || []).map((v) => v?.id).filter(id => id != null) || [];
         setStickyIds(ids);
-    }, [option])
+    }, [option]);
 
     const originalList = React.useMemo(() => {
         return Array.from(data || []);
@@ -272,7 +272,7 @@ const NoteHome = (props) => {
             {
                 label: isSticky ? '从首屏移除' : "贴在首屏",
                 icon: isSticky ? <IconDeviceDesktopX /> : <IconDeviceDesktop />,
-                key: "top",
+                key: "sticky",
                 onClick: () => {
                     if (isSticky) {
                         note.removeSticky(id, true);
@@ -295,7 +295,7 @@ const NoteHome = (props) => {
             {
                 label: "删除便签",
                 icon: <IconTrashX />,
-                key: "del-group",
+                key: "delete",
                 onClick: () => {
                     onDelete([id]);
                 },
@@ -304,7 +304,7 @@ const NoteHome = (props) => {
     }, [stickyIds, tools, note, option, updateIds, onDelete]);
 
     useUpdateEffect(() => {
-        if (note.openId == -1) {
+        if (note.openId === -1) {
             if (list?.length && list[0]?.data?.id != null) {
                 note.open(list[0].data.id);
             } else {
@@ -316,7 +316,7 @@ const NoteHome = (props) => {
     useUpdateEffect(() => {
         run();
         updateIds();
-    }, [noteType, run, updateIds])
+    }, [noteType, run, updateIds]);
 
     React.useEffect(() => {
         if (note.activeTabKey) {

@@ -11,6 +11,7 @@ import {
 import {
   db
 } from "~/db";
+import { handleError } from "~/utils/errorHandler";
 import _ from "lodash";
 
 const devJsonName = '/jvmao-tab.json';
@@ -65,7 +66,7 @@ export default class DataStores {
           resolve(0); // 远端无数据
         })
       }).catch((error) => {
-        console.error('Error testing webDAV connection:', error);
+        handleError(error, "DataStores.test");
         this.client = null;
         reject();
       });
@@ -344,7 +345,7 @@ export default class DataStores {
       }, 0);
 
     } catch (error) {
-      console.error('拉取远端数据失败:', error);
+      handleError(error, "DataStores._pull");
       
       // 如果导入失败且有备份，尝试恢复
       if (backupBlob && backupBlob.size > 0) {
@@ -374,7 +375,7 @@ export default class DataStores {
           console.log('备份数据恢复成功');
           tools.error(`同步失败，已恢复本地数据: ${error.message}`);
         } catch (restoreError) {
-          console.error('恢复备份数据失败:', restoreError);
+          handleError(restoreError, "DataStores._pull.restoreBackup");
           // 恢复失败，数据库可能处于不一致状态
           // 尝试重新打开数据库
           try {
@@ -382,7 +383,7 @@ export default class DataStores {
               await db.open();
             }
           } catch (openError) {
-            console.error('无法重新打开数据库:', openError);
+            handleError(openError, "DataStores._pull.reopenDb");
           }
           tools.error(`同步失败且无法恢复数据: ${error.message}。恢复备份失败: ${restoreError.message}。请手动重新加载页面。`);
         }
@@ -615,7 +616,7 @@ export default class DataStores {
           })
         });
       } catch (error) {
-        console.error('Error writing file:', error);
+        handleError(error, "DataStores.writeFile");
         reject(error);
       }
     });

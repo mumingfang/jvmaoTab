@@ -9,6 +9,8 @@ import api from "~/utils/api";
 import {
   db
 } from "~/db";
+import BaseStore from "./BaseStore";
+import { handleError } from "~/utils/errorHandler";
 import dayjs from 'dayjs'
 import _ from "lodash";
 import {
@@ -21,13 +23,17 @@ import {
 import Storage from "~/utils/storage";
 
 const field = ["id", "content", "fromUrl", "sort", "state"];
+const MAX_STICKY_NOTES = 5; // 最大便签数量
+const DUSTBIN_CLEAR_DAYS = 30; // 垃圾桶清理天数
+const DUSTBIN_CHECK_INTERVAL_DAYS = 1; // 垃圾桶检查间隔（天）
 
-export default class NoteStores {
+export default class NoteStores extends BaseStore {
   openEditor = false;
   openId = -1;
   activeTabKey = '';
 
   constructor(rootStore) {
+    super(rootStore);
     makeObservable(this, {
       openEditor: observable,
       openId: observable,
@@ -39,12 +45,20 @@ export default class NoteStores {
       open: action,
       updateActiveTabKey: action,
     });
-    this.rootStore = rootStore;
   }
 
-  dataUpdate = _.debounce(() => {
-    this.rootStore.data.update();
-  }, 1000)
+  // 便签数据更新：仅在尾部触发，最长 5 秒必然落盘，避免高频操作压垮同步
+  dataUpdate = _.debounce(
+    () => {
+      this.rootStore.data.update();
+    },
+    1000,
+    {
+      leading: false,
+      trailing: true,
+      maxWait: 5000,
+    }
+  );
 
   _init = () => {
     db.note
@@ -62,7 +76,7 @@ export default class NoteStores {
         }
       })
       .catch((err) => {
-        console.error(err);
+        handleError(err, "NoteStores._init.count");
       });
   }
 
@@ -91,16 +105,7 @@ export default class NoteStores {
   }
 
   findNote = (id) => {
-    return new Promise((resolve, reject) => {
-      db.note
-        .get(id)
-        .then((res) => {
-          resolve(res);
-        })
-        .catch((err) => {
-          reject(err);
-        });
-    });
+    return db.note.get(id);
   }
 
   getNote = (page = 1, limit = 48, type = 1) => {
@@ -110,19 +115,19 @@ export default class NoteStores {
     const cIds = [];
     // 过滤掉胶囊
     homeNoteData?.forEach((v) => {
-      if (v.type == 'capsule') {
+      if (v.type === 'capsule') {
         cIds.push(v.id);
       }
-    })
+    });
     return new Promise((resolve, reject) => {
       Promise.all([
-        db.note.count((note) => note.state == type),
+        db.note.count((note) => note.state === type),
         db.note.where('state').equals(type).reverse()
         .offset((page - 1) * limit)
         .limit(limit)
         .sortBy('updateTime')
         .then((res) => {
-          return (res || []).filter((v) => !cIds.includes(v.id))
+          return (res || []).filter((v) => !cIds.includes(v.id));
         })
       ]).then((res) => {
         resolve({
@@ -130,6 +135,7 @@ export default class NoteStores {
           list: res[1]
         })
       }).catch((err) => {
+        handleError(err, "NoteStores.getNote");
         reject(err)
       })
     });
@@ -153,7 +159,7 @@ export default class NoteStores {
             resolve(res);
           })
           .catch((err) => {
-            console.log("addNote", err);
+            handleError(err, "NoteStores.addNote.bulkPut");
             reject(err);
           });
       } else {
@@ -169,7 +175,7 @@ export default class NoteStores {
             resolve(res);
           })
           .catch((err) => {
-            console.error("addNote", err);
+            handleError(err, "NoteStores.addNote.put");
             reject(err);
           });
       }
@@ -192,7 +198,7 @@ export default class NoteStores {
           resolve(res);
         })
         .catch((err) => {
-          console.error("updateNote", err);
+          handleError(err, "NoteStores.updateNote");
           reject(err);
         });
     });
@@ -236,7 +242,7 @@ export default class NoteStores {
           this.dataUpdate();
           resolve(res);
         }).catch((err) => {
-          console.error("delectNote", err);
+          handleError(err, "NoteStores._delectNote.bulkDelete");
           reject(err);
         });
       } else {
@@ -251,7 +257,7 @@ export default class NoteStores {
             resolve(res);
           })
           .catch((err) => {
-            console.error("delectNote", err);
+            handleError(err, "NoteStores._delectNote.delete");
             reject(err);
           });
       }
@@ -310,9 +316,9 @@ export default class NoteStores {
       homeNoteData
     } = this.rootStore.option.item;
 
-    const canShowArrs = homeNoteData?.filter((v) => v.type != 'capsule');
-    if (canShowArrs?.length >= 5) {
-      this.rootStore.tools.error('最多只能有五个便签');
+    const canShowArrs = homeNoteData?.filter((v) => v.type !== 'capsule');
+    if (canShowArrs?.length >= MAX_STICKY_NOTES) {
+      this.rootStore.tools.error(`最多只能有${MAX_STICKY_NOTES}个便签`);
       return;
     }
 
@@ -333,13 +339,13 @@ export default class NoteStores {
     } = this.rootStore.option.item;
 
     const newData = homeNoteData?.length ? _.cloneDeep(homeNoteData) : [];
-    newData.forEach((v, index) => {
-      if (isID && v.id == key) {
-        newData.splice(index, 1);
-      } else if (v.key == key) {
-        newData.splice(index, 1);
+    const filteredData = newData.filter((v) => {
+      if (isID) {
+        return v.id !== key;
       }
-    })
+      return v.key !== key;
+    });
+    this.rootStore.option.setItem('homeNoteData', filteredData, false);
 
     this.rootStore.option.setItem('homeNoteData', newData, false);
   }
@@ -351,13 +357,13 @@ export default class NoteStores {
 
     const newData = homeNoteData?.length ? _.cloneDeep(homeNoteData) : [];
     let id = 0
-    newData.forEach((v, index) => {
-      if (v.key == key) {
+    newData.forEach((v) => {
+      if (v.key === key) {
         v.type = 'capsule';
         v.time = getRandomTimestamp(timeType);
         id = v.id;
       }
-    })
+    });
 
     this.rootStore.option.setItem('homeNoteData', newData, false);
 
@@ -380,33 +386,32 @@ export default class NoteStores {
     } = this.rootStore.option.item;
 
     const newData = homeNoteData?.length ? _.cloneDeep(homeNoteData) : [];
-    newData.forEach((v, index) => {
-      if (v.key == key) {
+    newData.forEach((v) => {
+      if (v.key === key) {
         v.type = '';
         v.time = 0;
-
       }
-    })
+    });
 
     this.rootStore.option.setItem('homeNoteData', newData, false);
   }
 
-  // 清空垃圾桶里 30 天前的便签
+  // 清空垃圾桶里指定天数前的便签
   clearNoteDustbin = () => {
     // 用Storage 控制 每天仅执行一次
     Storage.get('clearNoteDustbin').then((time) => {
-      if (!time || dayjs().diff(time, 'day') > 1) {
+      if (!time || dayjs().diff(time, 'day') > DUSTBIN_CHECK_INTERVAL_DAYS) {
         Storage.set('clearNoteDustbin', dayjs().format());
         this.getNote(1, 1000, -1).then((res) => {
           const notes = res.list;
           notes.forEach((v) => {
-            if (v.updateTime && dayjs().diff(v.updateTime, 'day') > 30) {
+            if (v.updateTime && dayjs().diff(v.updateTime, 'day') > DUSTBIN_CLEAR_DAYS) {
               this._delectNote(v.id);
             }
-          })
-        })
+          });
+        });
       }
-    })
+    });
   }
 
   addNewTab = () => {

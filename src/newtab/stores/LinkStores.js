@@ -8,6 +8,8 @@ import {
 import {
   db
 } from "~/db";
+import BaseStore from "./BaseStore";
+import { handleError } from "~/utils/errorHandler";
 import {
   getID,
   diff
@@ -15,7 +17,7 @@ import {
 import { ensureFaviconForUrl } from "~/utils/favicon";
 import _ from "lodash";
 
-export default class LinkStore {
+export default class LinkStore extends BaseStore {
   isInit = false;
   list = [];
   cacheList = [];
@@ -23,9 +25,8 @@ export default class LinkStore {
   _solist = [];
   activeId = null;
   addPanelToLinkItemEmitter = null;
-  rootStore;
-
   constructor(rootStore) {
+    super(rootStore);
     makeObservable(this, {
       isInit: observable,
       list: observable,
@@ -44,7 +45,6 @@ export default class LinkStore {
     // autorun(() => {
     //   console.log("[ autorun. ] >", this.list);
     // });
-    this.rootStore = rootStore;
   }
 
   updateNav() {
@@ -134,7 +134,7 @@ export default class LinkStore {
             resolve(res);
           })
           .catch((err) => {
-            console.log("addLink", err);
+            handleError(err, "LinkStore.addLink.bulkPut");
             reject(err);
           });
       } else {
@@ -146,7 +146,7 @@ export default class LinkStore {
             resolve(res);
           })
           .catch((err) => {
-            console.error("addLink", err);
+            handleError(err, "LinkStore.addLink.put");
             reject(err);
           });
       }
@@ -171,7 +171,7 @@ export default class LinkStore {
             }
           })
           .catch((err) => {
-            console.error("updateLink: error fetching linkId", err);
+            handleError(err, "LinkStore.updateLink.fetchLinkId");
             return Promise.resolve();
           });
       } else {
@@ -184,7 +184,7 @@ export default class LinkStore {
         return res;
       })
       .catch((err) => {
-        console.error("updateLink", err);
+        handleError(err, "LinkStore.updateLink");
       });
   }
 
@@ -199,20 +199,25 @@ export default class LinkStore {
           resolve(res);
         })
         .catch((err) => {
+          handleError(err, "LinkStore.deleteLinkByTimeKey");
           reject(err);
-          console.error("deleteLink", err);
         });
     });
   }
 
   getLinkByParentId(parentIds, hide = false) {
-    if (hide) {
-      return db.link.where("parentId").anyOf(parentIds).toArray();
-    } else {
-      return db.link.where("parentId").anyOf(parentIds).and(function (link) {
-        return !link.hide;
-      }).toArray();
-    }
+    return this.safeDbOperation(() => {
+      if (hide) {
+        return db.link.where("parentId").anyOf(parentIds).toArray();
+      }
+      return db.link
+        .where("parentId")
+        .anyOf(parentIds)
+        .and(function (link) {
+          return !link.hide;
+        })
+        .toArray();
+    }, "LinkStore.getLinkByParentId");
   }
 
   updateData(newValue) {
@@ -350,23 +355,26 @@ export default class LinkStore {
           this.getAllLinkToSo();
         })
         .catch((err) => {
-          console.error(err);
+          handleError(err, "LinkStore.init.count");
         });
     });
   }
 
   getLinkByTimeKey(timeKey) {
     return new Promise((resolve, reject) => {
-      db.link
-        .where("timeKey")
-        .equals(timeKey)
-        .first()
+      this.safeDbOperation(
+        () =>
+          db.link
+            .where("timeKey")
+            .equals(timeKey)
+            .first(),
+        "LinkStore.getLinkByTimeKey"
+      )
         .then((res) => {
           resolve(res);
         })
         .catch((err) => {
           reject(err);
-          console.error("getLinkByTimeKey", err);
         });
     });
   }
@@ -394,7 +402,7 @@ export default class LinkStore {
           resolve(res || []);
         })
         .catch((err) => {
-          console.error("getPendingLinks", err);
+          handleError(err, "LinkStore.getPendingLinks");
           reject(err);
         });
     });
@@ -432,13 +440,13 @@ export default class LinkStore {
                 resolve(res);
               })
               .catch((err) => {
-                console.error("addPendingLink", err);
+                handleError(err, "LinkStore.addPendingLink.put");
                 reject(err);
               });
           });
         })
         .catch((err) => {
-          console.error("addPendingLink check", err);
+          handleError(err, "LinkStore.addPendingLink.check");
           reject(err);
         });
     });
@@ -457,7 +465,7 @@ export default class LinkStore {
           resolve(res);
         })
         .catch((err) => {
-          console.error("removePendingLink", err);
+          handleError(err, "LinkStore.removePendingLink");
           reject(err);
         });
     });
@@ -490,13 +498,13 @@ export default class LinkStore {
                 resolve(res);
               })
               .catch((err) => {
-                console.error("addPendingLinksToGroup", err);
+                handleError(err, "LinkStore.addPendingLinksToGroup.update");
                 reject(err);
               });
           });
         })
         .catch((err) => {
-          console.error("addPendingLinksToGroup", err);
+          handleError(err, "LinkStore.addPendingLinksToGroup.get");
           reject(err);
         });
     });

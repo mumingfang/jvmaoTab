@@ -33,6 +33,7 @@ const PreferencesSo = () => {
                 soList,
                 soAOpen,
                 isSoBarDown,
+                soHdCenter,
             }}
             onValuesChange={handleChange}
         >

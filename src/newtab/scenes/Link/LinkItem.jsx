@@ -10,7 +10,7 @@ import { refreshFaviconForUrl } from "~/utils/favicon";
 
 
 
-const LinkItem = (props) => {
+const LinkItemComponent = (props) => {
   const { small, onDelete = () => { } } = props;
   const { option, tools } = useStores();
   const { linkOpenSelf } = option.item;
@@ -219,4 +219,7 @@ const LinkItem = (props) => {
     return item;
   }
 };
-export default observer(LinkItem);
+
+const LinkItem = React.memo(observer(LinkItemComponent));
+
+export default LinkItem;

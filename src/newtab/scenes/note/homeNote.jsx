@@ -6,9 +6,16 @@ import { DndContext } from "@dnd-kit/core";
 import { restrictToParentElement } from "@dnd-kit/modifiers";
 import { AnimatePresence } from 'framer-motion';
 import HomeNoteItem from "~/scenes/note/homeNoteItem";
-import { IconSettings, IconInfoCircle, IconDownload } from "@tabler/icons-react";
+import { IconSettings, IconInfoCircle, IconDownload, IconRefresh } from "@tabler/icons-react";
 import { useMemoizedFn, useLongPress } from 'ahooks';
 import _ from "lodash";
+
+// 常量定义
+const NOTE_WIDTH = 240;
+const NOTE_HEIGHT = 240;
+const POSITION_SAVE_DELAY = 200; // 位置保存延迟（毫秒）
+const SHOW_DELAY = 500; // 显示延迟（毫秒）
+const MAX_STICKY_NOTES = 5; // 最大便签数量
 
 const Wrap = styled.div`
     position: absolute;
@@ -28,7 +35,7 @@ const DndContextWrap = styled.div`
     z-index: 5;
 `;
 
-const HomeNote = (props) => {
+const HomeNoteComponent = (props) => {
     const { stickled } = props
     const { home, option, note, tools } = useStores();
     const { homeNoteData } = option.item;
@@ -42,73 +49,53 @@ const HomeNote = (props) => {
     }).current;
 
     const onDoubleClick = useMemoizedFn((e) => {
-
         if (!e.target.classList.contains("sn-bg-wrap")) {
             return;
         }
-        // div的尺寸
-        const divWidth = 240;
-        const divHeight = 240;
 
-        // 屏幕尺寸
         const screenWidth = window.innerWidth;
         const screenHeight = window.innerHeight;
-
-        // 鼠标点击位置
         const mouseX = e.clientX;
         const mouseY = e.clientY;
 
-        // 计算div左上角的位置
-        let left = mouseX - divWidth / 2;
-        let top = mouseY - divHeight / 2;
+        // 计算div左上角的位置（居中显示）
+        let left = mouseX - NOTE_WIDTH / 2;
+        let top = mouseY - NOTE_HEIGHT / 2;
 
         // 确保div不会超出屏幕边缘
-        if (left < 0) {
-            left = 0;
-        } else if (left + divWidth > screenWidth) {
-            left = screenWidth - divWidth;
-        }
-
-        if (top < 0) {
-            top = 0;
-        } else if (top + divHeight > screenHeight) {
-            top = screenHeight - divHeight;
-        }
+        left = Math.max(0, Math.min(left, screenWidth - NOTE_WIDTH));
+        top = Math.max(0, Math.min(top, screenHeight - NOTE_HEIGHT));
 
         note.addSticky({ top, left });
-
-    }, [])
+    }, [note])
 
     const saveNotePosition = useMemoizedFn((key, left, top) => {
         if (!v.canSaveNotePosition) {
             return;
         }
-        console.log('%c [ saveNotePosition ]-80', 'font-size:13px; background:pink; color:#bf2c9f;')
         const newData = homeNoteData?.length ? _.cloneDeep(homeNoteData) : [];
-        newData.forEach((v) => {
-            if (v.key == key) {
-                v.left = left;
-                v.top = top;
+        newData.forEach((item) => {
+            if (item.key === key) {
+                item.left = left;
+                item.top = top;
             }
-        })
+        });
         option.setItem('homeNoteData', newData, false);
-    }, [v.canSaveNotePosition])
+    }, [v.canSaveNotePosition, homeNoteData, option])
 
     const saveNoteId = useMemoizedFn((key, id, remove = false) => {
-        console.log('%c [ saveNoteId ]-80', 'font-size:13px; background:pink; color:#bf2c9f;')
         const newData = homeNoteData?.length ? _.cloneDeep(homeNoteData) : [];
-        newData.forEach((v) => {
-            if (v.key == key) {
-                v.id = remove ? 0 : id;
+        newData.forEach((item) => {
+            if (item.key === key) {
+                item.id = remove ? 0 : id;
             }
-        })
-
+        });
         option.setItem('homeNoteData', newData, false);
-    }, [])
+    }, [homeNoteData, option])
 
     const removeNote = useMemoizedFn((key) => {
         note.removeSticky(key);
-    });
+    }, [note]);
 
 
     const onContextMenu = React.useCallback((e) => {
@@ -132,10 +119,10 @@ const HomeNote = (props) => {
                 },
             },
         ];
-        if (option.item.bgType == "bing") {
+        if (option.item.bgType === "bing") {
             list.push({
                 type: 'divider',
-            })
+            });
             list.push({
                 label: "Bing 壁纸下载",
                 icon: <IconDownload />,
@@ -143,11 +130,19 @@ const HomeNote = (props) => {
                 onClick: () => {
                     window.open(home.bgUrl, '_blank');
                 },
-            })
+            });
+            list.push({
+                label: "随机换一张 Bing 壁纸",
+                icon: <IconRefresh />,
+                key: "randomBing",
+                onClick: () => {
+                    home.randomBingBg && home.randomBingBg();
+                },
+            });
         }
 
         tools.setRightClickEvent(e, list);
-    }, []);
+    }, [tools, option, home]);
 
 
     // 长按
@@ -171,21 +166,21 @@ const HomeNote = (props) => {
     React.useEffect(() => {
         if (!stickled) {
             setTimeout(() => {
-                setShow(false)
+                setShow(false);
                 setTimeout(() => {
-                    v.canSaveNotePosition = true
-                }, 200);
-            }, 500);
+                    v.canSaveNotePosition = true;
+                }, POSITION_SAVE_DELAY);
+            }, SHOW_DELAY);
         } else {
-            setShow(true)
-            v.canSaveNotePosition = false
+            setShow(true);
+            v.canSaveNotePosition = false;
         }
     }, [stickled])
 
 
     return (
         <Wrap zIndex={stickled ? -1 : 20} onDoubleClick={onDoubleClick} >
-            <DndContext autoScroll={false} modifiers={[restrictToParentElement]} tabindex="-1">
+            <DndContext autoScroll={false} modifiers={[restrictToParentElement]} tabIndex="-1">
                 <DndContextWrap className="sn-bg-wrap" data-type="bg-root"  ref={parentRef} onContextMenu={(e) => onContextMenu(e)}>
                     <AnimatePresence>
                         {!show && (homeNoteData || []).map((v) => {
@@ -197,7 +192,7 @@ const HomeNote = (props) => {
                                 kId={v.key}
                                 type={v.type}
                                 time={v.time}
-                                zIndex={activeID == v.key ? 10 : 5}
+                                zIndex={activeID === v.key ? 10 : 5}
                                 saveNotePosition={saveNotePosition}
                                 saveNoteId={saveNoteId}
                                 removeNote={removeNote}
@@ -213,4 +208,6 @@ const HomeNote = (props) => {
     );
 }
 
-export default observer(HomeNote);
+const HomeNote = React.memo(observer(HomeNoteComponent));
+
+export default HomeNote;

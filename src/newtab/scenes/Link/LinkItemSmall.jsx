@@ -46,7 +46,7 @@ const animations = {
     }
 };
 
-const LinkItemSmall = (props) => {
+const LinkItemSmallComponent = (props) => {
     const { isSoBarDown } = props;
     const { option } = useStores();
     const { linkOpenSelf } = option.item;
@@ -102,4 +102,7 @@ const LinkItemSmall = (props) => {
 
     return item;
 };
-export default observer(LinkItemSmall);
+
+const LinkItemSmall = React.memo(observer(LinkItemSmallComponent));
+
+export default LinkItemSmall;
