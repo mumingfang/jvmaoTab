@@ -48,6 +48,24 @@ function Manual(props) {
     const [openState, setOpenState] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
     const { systemTheme } = option.item;
+    // Firefox 兼容性：动态计算 perspective 值（使用像素而不是 vw，因为 Firefox 对 vw 的支持可能有问题）
+    const [perspectiveValue, setPerspectiveValue] = React.useState(() => {
+        if (typeof window !== 'undefined') {
+            return window.innerWidth * 1.8; // 180vw 转换为像素
+        }
+        return 1800; // 默认值
+    });
+
+    React.useEffect(() => {
+        const updatePerspective = () => {
+            if (typeof window !== 'undefined') {
+                setPerspectiveValue(window.innerWidth * 1.8);
+            }
+        };
+        updatePerspective();
+        window.addEventListener('resize', updatePerspective);
+        return () => window.removeEventListener('resize', updatePerspective);
+    }, []);
 
     const getSystemTheme = React.useCallback(() => option.getSystemTheme(), [systemTheme]);
 
@@ -172,11 +190,13 @@ function Manual(props) {
                         }}
                         initial={{
                             zIndex: books.length - k,
-                            transform: `perspective(180vw) rotateY(0deg)`,
+                            // Firefox 兼容性：使用动态计算的像素值而不是 vw 单位
+                            transform: `perspective(${perspectiveValue}px) rotateY(0deg)`,
                         }}
                         animate={{
                             zIndex: openState[k] ? 1 : books.length - k,
-                            transform: `perspective(180vw) rotateY(${openState[k] ? -180 : active > 0 ? 0 : `-${26 - (k + 1)}`}deg)`,
+                            // Firefox 兼容性：使用动态计算的像素值而不是 vw 单位
+                            transform: `perspective(${perspectiveValue}px) rotateY(${openState[k] ? -180 : active > 0 ? 0 : `-${26 - (k + 1)}`}deg)`,
                         }}
                     >
                         <div className={cx(['page', 'page-back', `page-back-${k}`])} >

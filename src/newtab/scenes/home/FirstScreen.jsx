@@ -253,7 +253,7 @@ const FirstScreen = (props) => {
   const { handleUnlock, unlock, showTopIcon } = props;
 
   const { home, tools, note, option, link } = useStores();
-  const { isSoBarDown, homeLinkTimeKey, bgColor, bgType, showHomeClock, homeLinkMaxNum = 14, soHdCenter, bgImageFit = 'cover', bg2ImageFit = 'cover' } = option.item;
+  const { isSoBarDown, homeLinkTimeKey, bgColor, bgType, showHomeClock, homeLinkMaxNum = 14, soHdCenter, bgImageFit = 'cover', bg2ImageFit = 'cover', homeGlassEffect } = option.item;
   
   // 智能判断实际的展示方式（初始值：如果是 auto 则先用 cover，待图片加载后更新）
   const [actualBg1ImageFit, setActualBg1ImageFit] = React.useState(bgImageFit === 'auto' ? 'cover' : bgImageFit);
@@ -537,8 +537,9 @@ const FirstScreen = (props) => {
         initial={unlock ? 'top' : "center"}
         variants={searchAnimations()}
         animate={searchWrapController}
+        
       >
-        <HomeSearch stickled={unlock} />
+        <HomeSearch stickled={unlock} className={homeGlassEffect ? 'glass-card' : ''} />
       </SearchWrap>
       <HomeLinkList
         homeLink={homeLink}
@@ -546,6 +547,7 @@ const FirstScreen = (props) => {
         isSoBarDown={isSoBarDown}
         stickled={unlock}
         showHomeLink={showHomeLink}
+        glassMode={homeGlassEffect}
       />
       <HomeNote stickled={unlock} />
     </>

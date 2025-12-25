@@ -11,6 +11,7 @@ import { ReactSortable } from "react-sortablejs";
 import { IconX } from "@tabler/icons-react";
 import FavIconIcon from "~/scenes/public/FavIconIcon";
 import { getID } from "~/utils";
+import { ensureFaviconForUrl } from "~/utils/favicon";
 
 function checkUrlHasSpecificQueryAndEndsWithEqual(url, queryKey) {
     // 解析URL中的查询字符串
@@ -175,13 +176,22 @@ const SoSelect = (props) => {
         })
     }, [customList])
 
-    const onFinish = React.useCallback((values) => {
+    const onFinish = React.useCallback(async (values) => {
         console.log('Success:', values);
         if (!checkUrlHasSpecificQueryAndEndsWithEqual(values['url'], values['searchParams'])) {
             tools.error('网址填写不正确，请检查后重新填写');
             return;
         }
         api.get(values['url']);
+        
+        // 获取域名用于后续 favicon 获取
+        let origin;
+        try {
+            origin = new URL(values['url']).origin;
+        } catch (e) {
+            console.error('[SoSelect] Invalid URL for favicon fetching', values['url'], e);
+        }
+        
         setCustomList((oldV) => {
             const v = _.cloneDeep(oldV);
             v.push({
@@ -193,8 +203,20 @@ const SoSelect = (props) => {
             option.setItem('customkey', v);
             onAddModalClose();
             return v;
-        })
-    }, []);
+        });
+        
+        // 异步获取 favicon，不阻塞保存操作
+        if (origin) {
+            ensureFaviconForUrl(values['url']).then(() => {
+                // 触发全局事件通知图标已刷新
+                window.dispatchEvent(new CustomEvent('faviconRefreshed', {
+                    detail: { origin }
+                }));
+            }).catch((error) => {
+                console.error('[SoSelect] Failed to fetch favicon for custom search source', error);
+            });
+        }
+    }, [tools, option, onAddModalClose]);
 
     React.useEffect(() => {
         const soLost = [...customList, ...SoIcon];

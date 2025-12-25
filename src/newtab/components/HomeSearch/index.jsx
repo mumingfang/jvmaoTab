@@ -55,7 +55,7 @@ const SearchLinkItem = styled.div`
 const HomeSearch = (props) => {
   const { option, home, link } = useStores();
   const { isSoBarDown, linkOpenSelf, customkey } = option.item
-  const { stickled } = props;
+  const { stickled, className } = props;
   const inputRef = React.useRef(null);
   const [inputFocus, setInputFocus] = React.useState(false);
   // 使用 useState 管理 value，确保更新能触发重新渲染
@@ -82,7 +82,7 @@ const HomeSearch = (props) => {
 
   // 用于取消之前的请求，避免竞态条件
   const requestControllerRef = React.useRef(null);
-  
+
   // 缓存 soList，避免每次重新创建
   const soList = useCreation(() => {
     return [...customkey, ...SoIcon];
@@ -128,7 +128,7 @@ const HomeSearch = (props) => {
               timestamp: Date.now(),
               hostname: hostname
             };
-            
+
             // 使用 chrome.storage.local 存储
             if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
               chrome.storage.local.set({ [storageKey]: queryData }, () => {
@@ -154,7 +154,7 @@ const HomeSearch = (props) => {
           } catch (e) {
             // 忽略错误
           }
-          
+
           // 直接使用 baseUrl，不需要 URL 参数
           searchUrl = activeSoItem.baseUrl;
         } else {
@@ -243,10 +243,10 @@ const HomeSearch = (props) => {
           throw new Error("Invalid response format");
         }
         let suggestions = JSON.parse(str.slice(startIndex, endIndex + 1));
-        
+
         const options = _.orderBy(
-          _.take(suggestions, 8), 
-          [], 
+          _.take(suggestions, 8),
+          [],
           !stickled && isSoBarDown ? 'desc' : 'asc'
         ).map(item => ({
           value: item,
@@ -478,7 +478,7 @@ const HomeSearch = (props) => {
   const updateInputValue = useMemoizedFn((value) => {
     // 更新 React state
     setInputValue(value);
-    
+
     // 直接操作 DOM 元素确保立即显示
     // 使用 setTimeout 确保在下一个事件循环中执行，避免与 React 的更新冲突
     setTimeout(() => {
@@ -489,11 +489,11 @@ const HomeSearch = (props) => {
         if (inputElement) {
           // 直接设置 DOM 值
           inputElement.value = value;
-          
+
           // 触发 input 事件，让 React 和 Ant Design 知道值已改变
           const inputEvent = new Event('input', { bubbles: true, cancelable: true });
           inputElement.dispatchEvent(inputEvent);
-          
+
           // 也触发 change 事件
           const changeEvent = new Event('change', { bubbles: true, cancelable: true });
           inputElement.dispatchEvent(changeEvent);
@@ -612,7 +612,7 @@ const HomeSearch = (props) => {
         className={cx({
           hidden: home.isBg2,
           'sn-search-wrap': true,
-        })}
+        }, className)}
         stickled={stickled}
         isRound={option.item?.soStyleIsRound}
       >

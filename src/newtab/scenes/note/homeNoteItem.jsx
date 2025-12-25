@@ -246,7 +246,7 @@ const HomeNoteItem = (props) => {
         } else {
             debouncedRun(transformPosition.x, transformPosition.y);
         }
-    }, [transform, debouncedRun, transformPosition]);
+    }, [transform, debouncedRun]);
 
     React.useEffect(() => {
         if (type === 'capsule' && time && dayjs().isAfter(time)) {

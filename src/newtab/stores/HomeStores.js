@@ -41,6 +41,36 @@ export default class HomeStores {
     if (this.rootStore?.option?.item?.bgType !== 'bing') {
       return;
     }
+
+    let loadingTimeout = null;
+    let hideLoading = null;
+
+    // 2秒后显示loading通知
+    loadingTimeout = setTimeout(() => {
+      if (this.rootStore?.tools?.messageApi) {
+        hideLoading = this.rootStore.tools.messageApi.loading('正在加载壁纸...', 0);
+      }
+    }, 2000);
+
+    // 关闭loading并显示消息的辅助函数
+    const closeLoadingAndShowMessage = (type, message) => {
+      if (loadingTimeout) {
+        clearTimeout(loadingTimeout);
+        loadingTimeout = null;
+      }
+      if (hideLoading) {
+        hideLoading();
+        hideLoading = null;
+      }
+      if (this.rootStore?.tools?.messageApi) {
+        if (type === 'success') {
+          this.rootStore.tools.messageApi.success(message);
+        } else if (type === 'error') {
+          this.rootStore.tools.messageApi.error(message);
+        }
+      }
+    };
+
     // 先获取当前缓存的 originSrcUrl，用于排除当前壁纸
     Storage.get('bingImg').then((bingImg) => {
       const currentOriginUrl = bingImg?.originSrcUrl || null;
@@ -100,19 +130,37 @@ export default class HomeStores {
                 originSrcUrl,
                 time: dayjs().format()
               });
+
+              // 图片加载成功，延迟500ms后关闭loading并显示成功消息
+              setTimeout(() => {
+                closeLoadingAndShowMessage('success', '壁纸加载成功');
+              }, 500);
             } catch (e) {
               console.error('随机 Bing 背景 base64 转换失败，回退到直接使用远程地址：', e);
               // 失败时直接使用远程地址，但不存储（避免覆盖已有缓存）
-              this.bgUrl = originSrcUrl;
-              this.bgThumbnailUrl = thumbnailUrl;
+              try {
+                this.bgUrl = originSrcUrl;
+                this.bgThumbnailUrl = thumbnailUrl;
+                // 即使回退到远程地址，也算加载成功
+                setTimeout(() => {
+                  closeLoadingAndShowMessage('success', '壁纸加载成功');
+                }, 500);
+              } catch (fallbackErr) {
+                // 如果远程地址也失败，显示错误
+                closeLoadingAndShowMessage('error', '壁纸加载失败，请稍后重试');
+              }
             }
+          } else {
+            closeLoadingAndShowMessage('error', '获取壁纸列表失败，请稍后重试');
           }
         })
         .catch((err) => {
           console.log(err);
+          closeLoadingAndShowMessage('error', '网络请求失败，请稍后重试');
         });
     }).catch((err) => {
       console.error('读取 Bing 背景缓存失败：', err);
+      closeLoadingAndShowMessage('error', '读取缓存失败，请稍后重试');
     });
   };
 

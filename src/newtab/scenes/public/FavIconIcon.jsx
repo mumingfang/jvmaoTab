@@ -81,6 +81,8 @@ const FavIconIcon = (props) => {
   }, [stores, systemTheme]);
 
   const [src, setSrc] = React.useState(() => getFallbackSrc(url, size, onlyDomain, isDarkMode));
+  // 跟踪当前 src 的来源：'db' 表示来自数据库，'fallback' 表示已经是回退逻辑，'default' 表示默认图标
+  const [srcType, setSrcType] = React.useState('fallback');
 
   // 监听全局 favicon 刷新事件
   React.useEffect(() => {
@@ -101,8 +103,10 @@ const FavIconIcon = (props) => {
                 if (record) {
                   if (isDarkMode && record.iconUrlDark) {
                     setSrc(record.iconUrlDark);
+                    setSrcType('db');
                   } else if (record.iconUrl) {
                     setSrc(record.iconUrl);
+                    setSrcType('db');
                   }
                 }
               } catch (e) {
@@ -130,6 +134,7 @@ const FavIconIcon = (props) => {
       // 如果没有 URL，直接使用回退逻辑（Chrome 的 /_favicon/ 需要有效 URL）
       if (!url) {
         setSrc(getDefaultFaviconSrc());
+        setSrcType('default');
         return;
       }
 
@@ -142,6 +147,7 @@ const FavIconIcon = (props) => {
         // URL 解析失败（可能是特殊协议或其他格式错误）
         // 在 Chrome 中，即使解析失败也尝试使用 /_favicon/ API
         setSrc(getFallbackSrc(url, size, onlyDomain, isDarkMode));
+        setSrcType('fallback');
         return;
       }
 
@@ -164,17 +170,21 @@ const FavIconIcon = (props) => {
           if (record && record.iconUrlDark) {
             // 有暗黑模式图标，直接使用
             setSrc(record.iconUrlDark);
+            setSrcType('db');
           } else {
             // 没有暗黑模式图标，判断浏览器
             if (!isFirefox() && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
               // Chrome：使用 API
               setSrc(getFallbackSrc(url, size, onlyDomain, true));
+              setSrcType('fallback');
             } else {
               // 非 Chrome：使用表里的正常图标，如果没有则返回默认图标
               if (record && record.iconUrl) {
                 setSrc(record.iconUrl);
+                setSrcType('db');
               } else {
                 setSrc(getDefaultFaviconSrc());
+                setSrcType('default');
               }
             }
           }
@@ -183,20 +193,24 @@ const FavIconIcon = (props) => {
           if (record && record.iconUrl) {
             // 有正常模式图标，直接使用
             setSrc(record.iconUrl);
+            setSrcType('db');
           } else {
             // 没有正常模式图标，判断浏览器
             if (!isFirefox() && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
               // Chrome：使用 API
               setSrc(getFallbackSrc(url, size, onlyDomain, false));
+              setSrcType('fallback');
             } else {
               // 非 Chrome：使用默认图标
               setSrc(getDefaultFaviconSrc());
+              setSrcType('default');
             }
           }
         }
       } catch {
         if (!cancelled) {
           setSrc(getFallbackSrc(url, size, onlyDomain, isDarkMode));
+          setSrcType('fallback');
         }
       }
     };
@@ -208,8 +222,36 @@ const FavIconIcon = (props) => {
     };
   }, [url, size, onlyDomain, isDarkMode, stores]);
 
+  // 处理图片加载失败
+  const handleImageError = React.useCallback(() => {
+    // 如果当前 src 是数据库中的图标（不是 chrome-extension:// 或 default-favicon），且还没有尝试过 fallback
+    if (srcType === 'db' && src && !src.startsWith('chrome-extension://') && !src.includes('default-favicon')) {
+      // Chrome 浏览器：尝试使用 /_favicon/ API
+      if (!isFirefox() && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
+        const fallbackSrc = getFallbackSrc(url, size, onlyDomain, isDarkMode);
+        setSrc(fallbackSrc);
+        setSrcType('fallback');
+      } else {
+        // 非 Chrome：使用默认图标
+        setSrc(getDefaultFaviconSrc());
+        setSrcType('default');
+      }
+    } else if (srcType === 'fallback' && src && src.startsWith('chrome-extension://')) {
+      // 如果 Chrome API 也失败了，使用默认图标
+      setSrc(getDefaultFaviconSrc());
+      setSrcType('default');
+    }
+    // 如果已经是默认图标，就不再处理（避免无限循环）
+  }, [src, srcType, url, size, onlyDomain, isDarkMode]);
+
   return (
-    <img src={src} alt="" style={{ width: size, height: size, ...style }} />
+    <img 
+      src={src} 
+      alt="" 
+      style={{ width: size, height: size, ...style }} 
+      onError={handleImageError}
+      loading="lazy"
+    />
   );
 };
 

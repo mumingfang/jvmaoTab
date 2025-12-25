@@ -92,7 +92,11 @@ const HomeLinkListComponent = (props) => {
   }
 
   return (
-    <HomeLinkNav isSoBarDown={isSoBarDown} stickled={stickled}>
+    <HomeLinkNav
+      isSoBarDown={isSoBarDown}
+      stickled={stickled}
+      
+    >
       <ReactSortable
         tag={SortableWrapper}
         list={linkList}
@@ -110,6 +114,7 @@ const HomeLinkListComponent = (props) => {
                 <LinkItemSmall
                   isSoBarDown={isSoBarDown}
                   {...v}
+                  className={props.glassMode ? 'glass-card' : ''}
                 />
               </div>
             );

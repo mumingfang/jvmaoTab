@@ -345,9 +345,8 @@ export default class NoteStores extends BaseStore {
       }
       return v.key !== key;
     });
+    // 修复：只调用一次 setItem，移除重复调用
     this.rootStore.option.setItem('homeNoteData', filteredData, false);
-
-    this.rootStore.option.setItem('homeNoteData', newData, false);
   }
 
   setTimeCapsule = (key, timeType = "week") => {

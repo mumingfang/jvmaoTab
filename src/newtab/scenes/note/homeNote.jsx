@@ -38,7 +38,9 @@ const DndContextWrap = styled.div`
 const HomeNoteComponent = (props) => {
     const { stickled } = props
     const { home, option, note, tools } = useStores();
-    const { homeNoteData } = option.item;
+    // 使用 computed 或直接访问，避免解构导致不必要的响应式追踪
+    // 在 observer 组件中，直接访问 option.item.homeNoteData 会被自动追踪
+    const homeNoteData = option.item.homeNoteData;
     const [activeID, setActiveID] = React.useState(null);
 
     const [show, setShow] = React.useState(false);
@@ -73,25 +75,40 @@ const HomeNoteComponent = (props) => {
         if (!v.canSaveNotePosition) {
             return;
         }
-        const newData = homeNoteData?.length ? _.cloneDeep(homeNoteData) : [];
-        newData.forEach((item) => {
+        // 直接从 option.item 读取最新值，避免依赖项循环
+        const currentData = option.item.homeNoteData?.length ? _.cloneDeep(option.item.homeNoteData) : [];
+        // 查找对应的项，检查位置是否真的改变了
+        const targetItem = currentData.find(item => item.key === key);
+        if (targetItem && targetItem.left === left && targetItem.top === top) {
+            // 位置没有改变，直接返回，避免重复存储
+            return;
+        }
+        currentData.forEach((item) => {
             if (item.key === key) {
                 item.left = left;
                 item.top = top;
             }
         });
-        option.setItem('homeNoteData', newData, false);
-    }, [v.canSaveNotePosition, homeNoteData, option])
+        option.setItem('homeNoteData', currentData, false);
+    }, [v.canSaveNotePosition, option])
 
     const saveNoteId = useMemoizedFn((key, id, remove = false) => {
-        const newData = homeNoteData?.length ? _.cloneDeep(homeNoteData) : [];
-        newData.forEach((item) => {
+        // 直接从 option.item 读取最新值，避免依赖项循环
+        const currentData = option.item.homeNoteData?.length ? _.cloneDeep(option.item.homeNoteData) : [];
+        // 查找对应的项，检查 ID 是否真的改变了
+        const targetItem = currentData.find(item => item.key === key);
+        const newId = remove ? 0 : id;
+        if (targetItem && targetItem.id === newId) {
+            // ID 没有改变，直接返回，避免重复存储
+            return;
+        }
+        currentData.forEach((item) => {
             if (item.key === key) {
-                item.id = remove ? 0 : id;
+                item.id = newId;
             }
         });
-        option.setItem('homeNoteData', newData, false);
-    }, [homeNoteData, option])
+        option.setItem('homeNoteData', currentData, false);
+    }, [option])
 
     const removeNote = useMemoizedFn((key) => {
         note.removeSticky(key);

@@ -148,6 +148,19 @@ const Tower = ({ children }) => {
         }
       });
 
+      // 获取自定义搜索源的域名集合，避免被清理
+      const customkey = option.item.customkey || [];
+      customkey.forEach((customSo) => {
+        if (customSo.url) {
+          try {
+            const origin = new URL(customSo.url).origin;
+            domainsInLink.add(origin);
+          } catch {
+            // ignore invalid URLs
+          }
+        }
+      });
+
       // 获取所有 favicon 记录
       const allFavicons = await db.favicon.toArray();
       const now = Date.now();
@@ -170,7 +183,7 @@ const Tower = ({ children }) => {
     } catch (error) {
       console.error("[favicon] Cleanup error", error);
     }
-  }, []);
+  }, [option]);
 
   React.useEffect(() => {
     tools.messageApi = messageApi;

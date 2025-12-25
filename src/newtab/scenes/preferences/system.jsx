@@ -10,7 +10,7 @@ const SystemData = () => {
     const { option } = useStores();
     const _option = _.cloneDeep(option.item);
 
-    const { systemTheme, showHomeClock, tabTitle, homeImgOpacity = 0.2 } = _option;
+    const { systemTheme, showHomeClock, tabTitle, homeImgOpacity = 0.2, homeGlassEffect = false } = _option;
 
     const handleChange = React.useCallback((value) => {
         if (!value || typeof value !== 'object') {
@@ -38,6 +38,7 @@ const SystemData = () => {
                 showHomeClock,
                 tabTitle,
                 homeImgOpacity,
+                homeGlassEffect,
             }}
             onValuesChange={run}
         >
@@ -72,6 +73,11 @@ const SystemData = () => {
             <Form.Item name='showHomeClock' valuePropName="checked" style={{ marginBottom: 5 }}>
                 <Checkbox >首屏显示时间和日期</Checkbox>
             </Form.Item>
+            {/* <Form.Item name='homeGlassEffect' valuePropName="checked" style={{ marginBottom: 5 }}>
+                <Checkbox>启用首页毛玻璃效果</Checkbox>
+            </Form.Item> */}
+            {/* <Divider /> */}
+
         </Form>
     );
 };

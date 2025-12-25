@@ -15,7 +15,7 @@ import {
 
 const localStorageKeys = ['bgType', 'bg2Type', 'bgBase64', 'bg2Base64', 'webdavVersion'];
 
-const v = 14;
+const v = 15;
 const updateOptions = {
   1: {
     errData: '9527'
@@ -89,6 +89,9 @@ const updateOptions = {
   14: {
     bgImageFit: 'cover',
     bg2ImageFit: 'cover',
+  },
+  15: {
+    homeGlassEffect: false,
   }
 }
 
