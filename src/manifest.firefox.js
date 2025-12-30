@@ -2,7 +2,7 @@ const manifestFirefox = {
   // Firefox 目前对 MV3 支持不完全，这里使用 MV2 风格的 manifest
   manifest_version: 2,
   name: "橘猫起始页",
-  version: "1.3.8",
+  version: "1.3.9",
   description: "起始页还可以是这样的",
   homepage_url: "https://www.jvmao.net",
 

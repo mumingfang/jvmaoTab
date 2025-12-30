@@ -3,9 +3,23 @@ import { SoIcon } from "../SearchIcon";
 import { Tooltip } from 'antd';
 import { IconArrowBarDown } from "@tabler/icons-react";
 import styled from "styled-components";
-import FavIconIcon from "../newtab/scenes/public/FavIconIcon";
 import _ from "lodash";
 import { getSearchInputValue, watchSearchInput } from "./utils/searchInput";
+
+// 获取默认图标路径
+const getDefaultFaviconSrc = () => {
+    try {
+        if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
+            return chrome.runtime.getURL("default-favicon.svg");
+        }
+        if (typeof browser !== "undefined" && browser.runtime && browser.runtime.getURL) {
+            return browser.runtime.getURL("default-favicon.svg");
+        }
+    } catch {
+        // ignore
+    }
+    return "/default-favicon.svg";
+};
 
 function changeArray(arr, index) {
     if (index - 2 >= 0) {
@@ -322,7 +336,23 @@ const So = () => {
                             // style={{ "--jvmao-net-scale": (Array.isArray(n) && n[k] !== undefined) ? n[k] : 1 }}
                         >
                             <Tooltip placement="right" title={item.name} >
-                                {item.icon ? item.icon : <div><FavIconIcon size={80} url={item.url} onlyDomain /></div>}
+                                {item.icon ? item.icon : (item.iconUrl ? (
+                                    <img 
+                                        src={item.iconUrl} 
+                                        alt="" 
+                                        style={{ width: 28, height: 28 }}
+                                        onError={(e) => {
+                                            // 加载失败时使用默认图标
+                                            e.target.src = getDefaultFaviconSrc();
+                                        }}
+                                    />
+                                ) : (
+                                    <img 
+                                        src={getDefaultFaviconSrc()} 
+                                        alt="" 
+                                        style={{ width: 28, height: 28 }}
+                                    />
+                                ))}
                             </Tooltip>
                         </NavItem>
                     ) : null;

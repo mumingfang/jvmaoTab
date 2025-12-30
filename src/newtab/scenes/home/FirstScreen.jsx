@@ -364,6 +364,14 @@ const FirstScreen = (props) => {
     }
   }, [home]);
 
+  // 监听首次加载状态，显示初始化提示
+  React.useEffect(() => {
+    if (bgType === 'bing' && home.isFirstLoad && home.isLoadingWallpaper) {
+      // 提示已经在 getBingBg() 中通过 messageApi 显示
+      // 这里可以添加额外的UI提示如果需要
+    }
+  }, [bgType, home.isFirstLoad, home.isLoadingWallpaper]);
+
   useUpdateEffect(() => {
     if (unlock) {
       setShowHomeLink(false);

@@ -11,7 +11,8 @@ import { ReactSortable } from "react-sortablejs";
 import { IconX } from "@tabler/icons-react";
 import FavIconIcon from "~/scenes/public/FavIconIcon";
 import { getID } from "~/utils";
-import { ensureFaviconForUrl } from "~/utils/favicon";
+import { ensureFaviconForUrl, detectFaviconFromUrl } from "~/utils/favicon";
+import { getFavicon } from "~/db";
 
 function checkUrlHasSpecificQueryAndEndsWithEqual(url, queryKey) {
     // 解析URL中的查询字符串
@@ -192,6 +193,30 @@ const SoSelect = (props) => {
             console.error('[SoSelect] Invalid URL for favicon fetching', values['url'], e);
         }
         
+        // 尝试获取 favicon URL
+        let iconUrl = null;
+        if (origin) {
+            try {
+                // 先检查数据库中是否已有记录
+                const faviconRecord = await getFavicon(origin);
+                if (faviconRecord && faviconRecord.iconUrl) {
+                    iconUrl = faviconRecord.iconUrl;
+                } else {
+                    // 数据库中没有，尝试获取
+                    const faviconData = await detectFaviconFromUrl(values['url']);
+                    if (faviconData && faviconData.iconUrl) {
+                        iconUrl = faviconData.iconUrl;
+                        // 同时保存到数据库
+                        ensureFaviconForUrl(values['url']).catch((error) => {
+                            console.error('[SoSelect] Failed to save favicon to DB', error);
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error('[SoSelect] Failed to get favicon URL', error);
+            }
+        }
+        
         setCustomList((oldV) => {
             const v = _.cloneDeep(oldV);
             v.push({
@@ -199,23 +224,12 @@ const SoSelect = (props) => {
                 key: getID(),
                 host: [getDomainFromUrl(values['url'])],
                 ...values,
+                iconUrl: iconUrl, // 存储 iconUrl 到配置中
             });
             option.setItem('customkey', v);
             onAddModalClose();
             return v;
         });
-        
-        // 异步获取 favicon，不阻塞保存操作
-        if (origin) {
-            ensureFaviconForUrl(values['url']).then(() => {
-                // 触发全局事件通知图标已刷新
-                window.dispatchEvent(new CustomEvent('faviconRefreshed', {
-                    detail: { origin }
-                }));
-            }).catch((error) => {
-                console.error('[SoSelect] Failed to fetch favicon for custom search source', error);
-            });
-        }
     }, [tools, option, onAddModalClose]);
 
     React.useEffect(() => {

@@ -167,6 +167,24 @@ const Home = (props) => {
     [s, isHovering, rollingBack]
   );
 
+  // 预加载 TabList 数据，当 unlock 为 true 时提前加载
+  React.useEffect(() => {
+    if (v.unlock && location.pathname === '/') {
+      // 提前加载窗口和标签页数据，避免 Drawer 打开时卡顿
+      // 优化：只调用一次 chrome.windows.getCurrent，然后并行加载其他数据
+      chrome.windows.getCurrent((window) => {
+        if (window?.id) {
+          Promise.all([
+            chrome.tabs.query({ windowId: window.id }),
+            link.getPendingLinks().catch(() => [])
+          ]).catch(() => {
+            // 静默失败，不影响主流程
+          });
+        }
+      });
+    }
+  }, [v.unlock, location.pathname, link]);
+
   React.useEffect(() => {
     if (v.unlock) {
       tools.updateTimeKey();
@@ -190,6 +208,8 @@ const Home = (props) => {
 
   React.useEffect(() => {
     // 监听滚轮事件
+    // 注意：使用 passive: false 是因为需要阻止默认行为（在特定条件下）
+    // 如果未来可以优化为 passive: true，性能会更好
     window.addEventListener("wheel", onwheel, { passive: false });
     return () => {
       window.removeEventListener("wheel", onwheel);
@@ -248,7 +268,9 @@ const Home = (props) => {
         closable={true}
         maskClosable={false}
         mask={false}
-        onClose={() => (tools.tabListDrawer = false)}
+        onClose={useMemoizedFn(() => {
+          tools.tabListDrawer = false;
+        })}
         open={tools.tabListDrawer}
         width={tabListDrawerWidth}
         headerStyle={{
@@ -257,6 +279,11 @@ const Home = (props) => {
         }}
         bodyStyle={{
           padding: "10px",
+          willChange: "transform",
+          transform: "translateZ(0)",
+        }}
+        drawerStyle={{
+          willChange: "transform",
         }}
       // getContainer={false}
       >

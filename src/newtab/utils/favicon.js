@@ -51,7 +51,7 @@ const loadImageSize = (url) => {
 };
 
 // 基于 URL 直接抓取 favicon（不依赖当前活动 tab）
-const detectFaviconFromUrl = async (url) => {
+export const detectFaviconFromUrl = async (url) => {
   if (!url || isSpecialProtocol(url)) {
     return null;
   }
