@@ -16,7 +16,7 @@ const PreferencesBG = () => {
     const { tools, option, home } = useStores();
     const { bgType, bgUrl, bgBase64, bg2Type, bg2Url, bg2Base64, bgColor, bgImageFit = 'cover', bg2ImageFit = 'cover' } = option.item;
 
-    const handleChange = (value) => {
+    const handleChange = async (value) => {
         if (!value || typeof value !== 'object') {
             return;
         }
@@ -30,11 +30,22 @@ const PreferencesBG = () => {
                             v = v.toHexString();
                         }
                         break;
-                    // case 'bgBase64':
-                    // case 'bg2Base64':
-                    //     Storage.removeBlob(key);
-                    //     Storage.remove(`${key}_thumbnail`);
-                    //     break;
+                    case 'bgBase64':
+                    case 'bg2Base64':
+                        // 如果是 Blob/File 对象，直接存储为 Blob（不转 base64）
+                        if (v instanceof Blob) {
+                            try {
+                                const blobKey = `${key}_blob`;
+                                await Storage.setBlob(blobKey, v);
+                                // 在 option 里存一个标记
+                                v = '__BLOB__';
+                            } catch (err) {
+                                console.error('存储图片 Blob 失败：', err);
+                                tools.error('保存图片失败，请重试');
+                                return;
+                            }
+                        }
+                        break;
                 }
 
                 option.setItem(key, v);

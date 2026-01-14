@@ -31,7 +31,7 @@ const ChiefSecurityAssurance = ({ children }) => {
   const confirm = React.useCallback(() => {
     setLoading(true);
     option.resetOption();
-  }, []);
+  }, [option]);
 
   return (
     <ErrorBoundary fallbackRender={({ error }) => (

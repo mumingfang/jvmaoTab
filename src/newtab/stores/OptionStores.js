@@ -127,9 +127,74 @@ export default class OptionStores {
     setTimeout(() => {
       db.option
         .toArray()
-        .then((res) => {
+        .then(async (res) => {
 
           if (res.length === 0) {
+            // 检查 Chrome Storage Sync 是否有 WebDAV 配置，尝试恢复数据
+            try {
+              const syncData = await new Promise((resolve, reject) => {
+                if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) {
+                  chrome.storage.sync.get(['webDavURL', 'webDavUsername', 'webDavPassword', 'webDavDir'], (result) => {
+                    if (chrome.runtime.lastError) {
+                      reject(chrome.runtime.lastError);
+                    } else {
+                      resolve(result);
+                    }
+                  });
+                } else {
+                  resolve({});
+                }
+              });
+
+              // 如果存在完整的 WebDAV 配置，尝试恢复
+              if (syncData?.webDavURL && syncData?.webDavUsername && syncData?.webDavPassword && syncData?.webDavDir) {
+                console.log('[WebDAV恢复] 检测到 Chrome Storage Sync 中有 WebDAV 配置，尝试恢复数据...');
+                
+                // 先初始化默认选项，等待一下确保默认选项已设置
+                this.update(0);
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+                // 先设置 webDavURL（确保 data.update() 能正确执行）
+                await this.setOption('webDavURL', syncData.webDavURL);
+                this.item.webDavURL = syncData.webDavURL;
+                
+                // 然后并行设置其他 WebDAV 配置
+                await Promise.all([
+                  this.setOption('webDavUsername', syncData.webDavUsername),
+                  this.setOption('webDavPassword', syncData.webDavPassword),
+                  this.setOption('webDavDir', syncData.webDavDir),
+                ]);
+                
+                // 将配置同步到 item 中
+                this.item.webDavUsername = syncData.webDavUsername;
+                this.item.webDavPassword = syncData.webDavPassword;
+                this.item.webDavDir = syncData.webDavDir;
+                
+                // 设置 WebDAV 开启状态和版本号
+                await this.setOption('webdavOpen', true);
+                await this.setOption('webdavVersion', syncData.webdavVersion || 1);
+                this.item.webdavOpen = true;
+                this.item.webdavVersion = syncData.webdavVersion || 1;
+                
+                // 标记已初始化，避免后续流程再次触发
+                this.isInit = true;
+                
+                // 等待一下确保数据已保存，然后触发 WebDAV 数据拉取
+                setTimeout(() => {
+                  this.rootStore.data.init();
+                  setTimeout(() => {
+                    this.rootStore.home.onLoadBg();
+                  }, 1000);
+                }, 500);
+                
+                return;
+              }
+            } catch (error) {
+              console.error('[WebDAV恢复] 检查 Chrome Storage Sync 失败:', error);
+              // 如果检查失败，继续走原有的新安装逻辑
+            }
+            
+            // 没有 WebDAV 配置或检查失败，走原有的新安装逻辑
             this.update(0);
             setTimeout(() => {
               this.rootStore.home.onLoadBg();

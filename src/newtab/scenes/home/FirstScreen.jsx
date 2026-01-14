@@ -255,6 +255,17 @@ const FirstScreen = (props) => {
   const { home, tools, note, option, link } = useStores();
   const { isSoBarDown, homeLinkTimeKey, bgColor, bgType, showHomeClock, homeLinkMaxNum = 14, soHdCenter, bgImageFit = 'cover', bg2ImageFit = 'cover', homeGlassEffect } = option.item;
   
+  // 智能选择显示 URL：
+  // - 如果 bgUrl 是本地 Blob URL（blob: 开头），优先使用它（最清晰）
+  // - 否则使用缩略图（更快加载）
+  // - 都没有时使用 bgUrl
+  const bg1DisplayUrl = React.useMemo(() => {
+    if (home.bgUrl?.startsWith('blob:')) {
+      return home.bgUrl; // 本地 Blob 已准备好，用大图
+    }
+    return home.bgThumbnailUrl || home.bgUrl || null;
+  }, [home.bgThumbnailUrl, home.bgUrl]);
+  
   // 智能判断实际的展示方式（初始值：如果是 auto 则先用 cover，待图片加载后更新）
   const [actualBg1ImageFit, setActualBg1ImageFit] = React.useState(bgImageFit === 'auto' ? 'cover' : bgImageFit);
   const [actualBg2ImageFit, setActualBg2ImageFit] = React.useState(bg2ImageFit === 'auto' ? 'cover' : bg2ImageFit);
@@ -313,7 +324,7 @@ const FirstScreen = (props) => {
 
 
   const bgImg = useCreation(() => {
-    const showBg1 = home.bgUrl && (!home.isBg2 || !home.bg2Url);
+    const showBg1 = bg1DisplayUrl && (!home.isBg2 || !home.bg2Url);
     const showBg2 = home.bg2Url && home.isBg2;
     
     return (
@@ -321,7 +332,7 @@ const FirstScreen = (props) => {
         backgroundColor={bgType === "color" ? bgColor : ''}
         bg1ImageFit={actualBg1ImageFit}
         bg2ImageFit={actualBg2ImageFit}
-        bg1Url={home.bgUrl || null}
+        bg1Url={bg1DisplayUrl}
         bg2Url={home.bg2Url || null}
         showBg1={showBg1}
         showBg2={showBg2}
@@ -334,18 +345,18 @@ const FirstScreen = (props) => {
       />
     )
 
-  }, [bgType, bgColor, actualBg1ImageFit, actualBg2ImageFit, home.bgUrl, home.bg2Url, home.isBg2, unlock])
+  }, [bgType, bgColor, actualBg1ImageFit, actualBg2ImageFit, bg1DisplayUrl, home.bg2Url, home.isBg2, unlock])
 
   // 智能判断第一壁纸的展示方式
   React.useEffect(() => {
-    if (bgImageFit === 'auto' && home.bgUrl) {
-      getAutoImageFit(home.bgUrl).then((fit) => {
+    if (bgImageFit === 'auto' && bg1DisplayUrl) {
+      getAutoImageFit(bg1DisplayUrl).then((fit) => {
         setActualBg1ImageFit(fit);
       });
     } else {
       setActualBg1ImageFit(bgImageFit);
     }
-  }, [bgImageFit, home.bgUrl]);
+  }, [bgImageFit, bg1DisplayUrl]);
 
   // 智能判断第二壁纸的展示方式
   React.useEffect(() => {

@@ -1,5 +1,12 @@
 const updateRecords = [
     {
+        version: "1.4.0",
+        items: [
+            "优化: 配置webdav之后兜底数据同步逻辑",
+            "优化: 壁纸展示逻辑，使用本地Blob URL优先展示高清壁纸",
+        ]
+    },
+    {
         version: "1.3.9",
         items: [
             "优化: 抽屉首次打开性能，预加载数据减少卡顿",

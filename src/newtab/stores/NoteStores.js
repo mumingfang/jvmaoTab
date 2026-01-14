@@ -82,9 +82,9 @@ export default class NoteStores extends BaseStore {
 
   open = (id) => {
     if (typeof id === 'undefined') {
-      Storage.get('noteOpenId').then(({
-        openId = '',
-      }) => {
+      Storage.get('noteOpenId').then((res) => {
+        // 兼容 res 为空或不包含 openId 的情况，避免解构 undefined 报错
+        const { openId = '' } = res || {};
         if (openId) {
           this.openId = openId;
         } else {

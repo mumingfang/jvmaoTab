@@ -32,17 +32,13 @@ const Wrap = styled(Upload)`
         }
     }
 `;
-const getBase64 = (img, callback) => {
-    const reader = new FileReader();
-    reader.addEventListener('load', () => callback(reader.result));
-    reader.readAsDataURL(img);
-};
 
 const UploadImg = (props) => {
     const { hidden = false } = props
     const { tools } = useStores();
-    // const [loading, setLoading] = React.useState(false);
     const [imageUrl, setImageUrl] = useControllableValue(props);
+    // 用于显示的临时 URL
+    const [displayUrl, setDisplayUrl] = React.useState('');
 
     const beforeUpload = (file) => {
         const fileType = ['image/jpeg', 'image/jpg', 'image/png', 'image/apng', 'image/gif', 'image/bmp', 'image/webp', 'image/heif', 'image/heic'];
@@ -57,22 +53,50 @@ const UploadImg = (props) => {
 
     const handleChange = (info) => {
         if (info.file.status === 'uploading') {
-            // setLoading(true);
             return;
         }
         if (info.file.status === 'done') {
-            getBase64(info.file.originFileObj, (e) => {
-                setImageUrl(e);
-                // console.log('%c XJ - [ e ]-77-「UploadImg.jsx」', 'font-size:13px; background:#f8f53d; color:#000;', e);
-            });
-
+            // 直接使用 Blob/File 对象，不再转 base64
+            const file = info.file.originFileObj;
+            if (file) {
+                // 立即显示预览
+                const previewUrl = URL.createObjectURL(file);
+                setDisplayUrl(previewUrl);
+                // 传递 Blob 给父组件（而不是 base64 字符串）
+                setImageUrl(file);
+            }
         }
     };
 
+    // 计算显示用的 URL
     const showImgUrl = React.useMemo(() => {
-        return typeof imageUrl === 'string' ? imageUrl : imageUrl ? URL?.createObjectURL(imageUrl) : '';
-    }, [imageUrl]);
+        // 优先使用临时预览 URL
+        if (displayUrl) {
+            return displayUrl;
+        }
+        // 兼容旧的 base64 字符串
+        if (typeof imageUrl === 'string' && imageUrl.startsWith('data:')) {
+            return imageUrl;
+        }
+        // 标记值，表示使用 Blob 存储
+        if (imageUrl === '__BLOB__') {
+            return ''; // 需要从 Storage 读取，由父组件处理
+        }
+        // Blob 对象
+        if (imageUrl instanceof Blob) {
+            return URL.createObjectURL(imageUrl);
+        }
+        return '';
+    }, [imageUrl, displayUrl]);
 
+    // 清理临时 URL
+    React.useEffect(() => {
+        return () => {
+            if (displayUrl) {
+                URL.revokeObjectURL(displayUrl);
+            }
+        };
+    }, [displayUrl]);
 
     return (
         <Wrap
@@ -83,7 +107,7 @@ const UploadImg = (props) => {
             beforeUpload={beforeUpload}
             onChange={handleChange}
         >
-            {imageUrl ? (
+            {showImgUrl ? (
                 <img
                     className="bgImg"
                     src={showImgUrl}

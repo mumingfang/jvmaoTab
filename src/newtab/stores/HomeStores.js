@@ -1,16 +1,12 @@
 import {
   observable,
   action,
-  computed,
   makeObservable,
-  autorun
 } from "mobx";
 import api from "~/utils/api";
 import dayjs from 'dayjs'
 import {
-  createThumbnail,
   base64ToBlob,
-  getBase64Image
 } from "~/utils";
 import Storage from "~/utils/storage";
 
@@ -39,9 +35,58 @@ export default class HomeStores {
     this.rootStore = rootStore;
   }
 
-  // 随机换一张 Bing 壁纸（最近 16 天内，且尽量不同于当前）
+  // ==================== Blob 存储工具方法 ====================
+  
+  /**
+   * 用 fetch 获取远程图片的 Blob
+   */
+  async fetchImageBlob(url) {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status}`);
+    }
+    return await response.blob();
+  }
+
+  /**
+   * 创建缩略图 Blob（在 canvas 中缩放）
+   */
+  async createThumbnailBlob(imageUrl, maxWidth = 800, maxHeight = 600) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'Anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        const width = img.width;
+        const height = img.height;
+        const scalingFactor = Math.min(maxWidth / width, maxHeight / height);
+        
+        canvas.width = width * scalingFactor;
+        canvas.height = height * scalingFactor;
+        
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error('Failed to create thumbnail blob'));
+          }
+        }, 'image/jpeg', 0.85);
+      };
+      img.onerror = () => reject(new Error('Failed to load image for thumbnail'));
+      img.src = imageUrl;
+    });
+  }
+
+  // ==================== Bing 壁纸相关 ====================
+
+  /**
+   * 随机换一张 Bing 壁纸（最近 16 天内，且尽量不同于当前）
+   */
   randomBingBg = () => {
-    // 仅当当前背景类型为 bing 时才生效
     if (this.rootStore?.option?.item?.bgType !== 'bing') {
       return;
     }
@@ -49,14 +94,12 @@ export default class HomeStores {
     let loadingTimeout = null;
     let hideLoading = null;
 
-    // 2秒后显示loading通知
     loadingTimeout = setTimeout(() => {
       if (this.rootStore?.tools?.messageApi) {
         hideLoading = this.rootStore.tools.messageApi.loading('正在加载壁纸...', 0);
       }
     }, 2000);
 
-    // 关闭loading并显示消息的辅助函数
     const closeLoadingAndShowMessage = (type, message) => {
       if (loadingTimeout) {
         clearTimeout(loadingTimeout);
@@ -75,182 +118,135 @@ export default class HomeStores {
       }
     };
 
-    // 先获取当前缓存的 originSrcUrl，用于排除当前壁纸
-    Storage.get('bingImg').then((bingImgCache) => {
+    Storage.get('bingImg').then(async (bingImgCache) => {
       const cache = this.convertOldCacheToNew(bingImgCache);
-      const wallpapers = cache?.wallpapers || [];
-      // 获取当前使用的壁纸的 originSrcUrl
-      const currentWallpaper = wallpapers.find(wp => {
-        if (!wp.time) return false;
-        return dayjs(wp.time).isSame(dayjs(), 'day');
-      }) || (wallpapers.length > 0 ? wallpapers[0] : null);
-      const currentOriginUrl = currentWallpaper?.originSrcUrl || null;
+      const currentUrlbase = cache?.urlbase || null;
 
-      // 一次性取最近 16 天的壁纸，然后随机挑一张（排除当前这张）
-      api
-        .get(
+      try {
+        const res = await api.get(
           `https://cn.bing.com/HPImageArchive.aspx?format=js&idx=0&n=16&mkt=zh-CN`
-        )
-        .then(async (res) => {
-          if (res && Array.isArray(res.images) && res.images.length) {
-            const list = res.images.map((img) => {
-              const { urlbase } = img;
-              // src 用 UHD 超清，thumbnail 用 800x600 作为占位
-              const originSrcUrl = `https://cn.bing.com${urlbase}_UHD.jpg`;
-              const thumbnailUrl = `https://cn.bing.com${urlbase}_800x600.jpg`;
-              return { originSrcUrl, thumbnailUrl, urlbase };
-            });
+        );
 
-            // 尽量排除当前正在使用的这张
-            const filtered = currentOriginUrl 
-              ? list.filter((item) => item.originSrcUrl !== currentOriginUrl)
-              : list;
-            const finalList = filtered.length ? filtered : list;
+        if (res && Array.isArray(res.images) && res.images.length) {
+          const list = res.images.map((img) => ({ urlbase: img.urlbase }));
 
-            const randomIdx = Math.floor(Math.random() * finalList.length);
-            const { originSrcUrl, thumbnailUrl } = finalList[randomIdx];
+          // 尽量排除当前正在使用的这张
+          const filtered = currentUrlbase 
+            ? list.filter((item) => item.urlbase !== currentUrlbase)
+            : list;
+          const finalList = filtered.length ? filtered : list;
 
-            try {
-              // 将新选中的 UHD 图片转为 base64，并存储，确保新标签页也能用
-              const dataUrl = await getBase64Image(originSrcUrl);
-              let thumbnailDataUrl = null;
+          const randomIdx = Math.floor(Math.random() * finalList.length);
+          const { urlbase } = finalList[randomIdx];
+          
+          const srcUrl = `https://cn.bing.com${urlbase}_UHD.jpg`;
+          const thumbnailUrl = `https://cn.bing.com${urlbase}_800x600.jpg`;
 
-              try {
-                thumbnailDataUrl = await createThumbnail(originSrcUrl, 800, 600);
-              } catch (thumbErr) {
-                console.error('生成 Bing 背景缩略图失败：', thumbErr);
-              }
+          // 先立即用远程 URL 显示（快速响应）
+          this.bgThumbnailUrl = thumbnailUrl;
+          this.bgUrl = srcUrl;
 
-              const blob = base64ToBlob(dataUrl);
-              const localSrcUrl = URL.createObjectURL(blob);
+          // 后台下载并存储 Blob（下次打开更快）
+          this.downloadAndStoreBingBlob(urlbase).catch(err => {
+            console.error('后台存储 Bing 壁纸 Blob 失败：', err);
+          });
 
-              let localThumbnailUrl = localSrcUrl;
-              if (thumbnailDataUrl) {
-                const thumbBlob = base64ToBlob(thumbnailDataUrl);
-                localThumbnailUrl = URL.createObjectURL(thumbBlob);
-              }
+          // 更新元数据
+          Storage.set('bingImg', {
+            urlbase,
+            time: dayjs().format()
+          });
 
-              // 更新显示
-              this.bgUrl = localSrcUrl;
-              this.bgThumbnailUrl = localThumbnailUrl;
-
-              // 存储到本地，使用新格式
-              const newWallpaper = {
-                dataUrl,
-                thumbnailDataUrl,
-                originSrcUrl,
-                time: dayjs().format()
-              };
-              
-              // 检查是否已存在当天的壁纸
-              const today = dayjs();
-              const todayIndex = wallpapers.findIndex(wp => 
-                wp.time && dayjs(wp.time).isSame(today, 'day')
-              );
-              
-              if (todayIndex >= 0) {
-                wallpapers[todayIndex] = newWallpaper;
-              } else {
-                wallpapers.unshift(newWallpaper);
-              }
-              
-              // 清理旧壁纸
-              const cleanedWallpapers = this.cleanOldWallpapers(wallpapers);
-              
-              Storage.set('bingImg', {
-                wallpapers: cleanedWallpapers,
-                lastUpdateTime: dayjs().format()
-              });
-
-              // 图片加载成功，延迟500ms后关闭loading并显示成功消息
-              setTimeout(() => {
-                closeLoadingAndShowMessage('success', '壁纸加载成功');
-              }, 500);
-            } catch (e) {
-              console.error('随机 Bing 背景 base64 转换失败，回退到直接使用远程地址：', e);
-              // 失败时直接使用远程地址，但不存储（避免覆盖已有缓存）
-              try {
-                this.bgUrl = originSrcUrl;
-                this.bgThumbnailUrl = thumbnailUrl;
-                // 即使回退到远程地址，也算加载成功
-                setTimeout(() => {
-                  closeLoadingAndShowMessage('success', '壁纸加载成功');
-                }, 500);
-              } catch (fallbackErr) {
-                // 如果远程地址也失败，显示错误
-                closeLoadingAndShowMessage('error', '壁纸加载失败，请稍后重试');
-              }
-            }
-          } else {
-            closeLoadingAndShowMessage('error', '获取壁纸列表失败，请稍后重试');
-          }
-        })
-        .catch((err) => {
-          console.log(err);
-          closeLoadingAndShowMessage('error', '网络请求失败，请稍后重试');
-        });
+          setTimeout(() => {
+            closeLoadingAndShowMessage('success', '壁纸加载成功');
+          }, 500);
+        } else {
+          closeLoadingAndShowMessage('error', '获取壁纸列表失败，请稍后重试');
+        }
+      } catch (err) {
+        console.error(err);
+        closeLoadingAndShowMessage('error', '网络请求失败，请稍后重试');
+      }
     }).catch((err) => {
       console.error('读取 Bing 背景缓存失败：', err);
       closeLoadingAndShowMessage('error', '读取缓存失败，请稍后重试');
     });
   };
 
-  // 初始化
+  /**
+   * 后台下载 Bing 壁纸并存储为 Blob
+   */
+  async downloadAndStoreBingBlob(urlbase) {
+    const srcUrl = `https://cn.bing.com${urlbase}_UHD.jpg`;
+    const thumbnailUrl = `https://cn.bing.com${urlbase}_800x600.jpg`;
+
+    try {
+      // 并行下载大图和缩略图
+      const [srcBlob, thumbBlob] = await Promise.all([
+        this.fetchImageBlob(srcUrl),
+        this.fetchImageBlob(thumbnailUrl).catch(() => null) // 缩略图失败不影响主流程
+      ]);
+
+      // 存储 Blob（不是 base64，直接存二进制）
+      await Storage.setBlob('bingWallpaper', srcBlob);
+      if (thumbBlob) {
+        await Storage.setBlob('bingWallpaperThumb', thumbBlob);
+      }
+
+      // 更新显示为本地 URL
+      const localSrcUrl = URL.createObjectURL(srcBlob);
+      this.bgUrl = localSrcUrl;
+      
+      if (thumbBlob) {
+        const localThumbUrl = URL.createObjectURL(thumbBlob);
+        this.bgThumbnailUrl = localThumbUrl;
+      }
+    } catch (err) {
+      console.error('下载 Bing 壁纸 Blob 失败：', err);
+      throw err;
+    }
+  }
+
+  /**
+   * 初始化加载背景
+   */
   onLoadBg = () => {
     this.rootStore.option.getOption('bgType').then((type) => {
       switch (type) {
         case 'bing':
-          this.getBingBg().then(({
-            srcUrl,
-            thumbnailUrl
-          }) => {
+          this.getBingBg().then(({ srcUrl, thumbnailUrl }) => {
             this.bgUrl = srcUrl;
             this.bgThumbnailUrl = thumbnailUrl;
           }).catch((err) => {
             console.error('加载 Bing 壁纸失败：', err);
             this.isLoadingWallpaper = false;
             this.isFirstLoad = false;
-            // 加载失败时，尝试使用缓存的旧壁纸
-            Storage.get('bingImg').then((cache) => {
-              const convertedCache = this.convertOldCacheToNew(cache);
-              const wallpapers = convertedCache?.wallpapers || [];
-              if (wallpapers.length > 0) {
-                const found = this.findWallpaper(wallpapers);
-                if (found && found.wallpaper) {
-                  const urlResult = this.createUrlFromWallpaper(found.wallpaper);
-                  if (urlResult) {
-                    this.bgUrl = urlResult.srcUrl;
-                    this.bgThumbnailUrl = urlResult.thumbnailUrl;
-                  }
-                }
-              }
-            });
           });
           break;
         case 'url':
           this.rootStore.option.getOption('bgUrl').then((value) => {
-            this.bgUrl = value
-            this.bgThumbnailUrl = value
+            this.bgUrl = value;
+            this.bgThumbnailUrl = value;
           });
           break;
         case 'file':
-          this.getImgToCache('bgBase64').then((url) => {
+          this.getLocalImageBlob('bgBase64').then((url) => {
             this.bgUrl = url;
-            // this.bgThumbnailUrl = thumbnail;
+            this.bgThumbnailUrl = url;
+          }).catch((err) => {
+            console.error('加载本地背景图失败：', err);
           });
           break;
         default:
           this.bgUrl = '';
           break;
       }
-    })
+    });
 
     this.rootStore.option.getOption('bg2Type').then((type) => {
       switch (type) {
         case 'bing':
-          this.getBingBg().then(({
-            srcUrl
-          }) => {
+          this.getBingBg().then(({ srcUrl }) => {
             this.bg2Url = srcUrl;
           });
           break;
@@ -260,222 +256,145 @@ export default class HomeStores {
           });
           break;
         case 'file':
-          this.getImgToCache('bg2Base64').then((url) => {
-            // var url = URL.createObjectURL(blob)
-            this.bg2Url = url
-            // this.bg1Url = url
+          this.getLocalImageBlob('bg2Base64').then((url) => {
+            this.bg2Url = url;
+          }).catch((err) => {
+            console.error('加载本地第二背景图失败：', err);
           });
           break;
       }
-    })
-
+    });
   }
 
   showBg2 = () => {
     this.isBg2 = true;
-    // if (this.bg2Url) {
-    //   this.bgUrl = this.bg2Url;
-    // }
   }
 
   showBg1 = () => {
     this.isBg2 = false;
-    // if (this.rootStore.option.item?.bgType === 'color') {
-    //   this.bgUrl = "";
-    // } else if (this.bgUrl !== this.bg1Url) {
-    //   this.bgUrl = this.bg1Url;
-    // }
   }
 
-
-  // 将旧格式缓存转换为新格式
+  /**
+   * 将旧格式缓存转换为新格式
+   */
   convertOldCacheToNew(oldCache) {
     if (!oldCache) return null;
     
-    // 检查是否已经是新格式（有 wallpapers 数组）
-    if (oldCache.wallpapers && Array.isArray(oldCache.wallpapers)) {
+    // 新格式：只有 urlbase 和 time
+    if (oldCache.urlbase) {
       return oldCache;
     }
     
-    // 旧格式：单对象，转换为新格式
-    if (oldCache.time || oldCache.dataUrl || oldCache.srcUrl) {
+    // 旧格式：有 wallpapers 数组
+    if (oldCache.wallpapers && Array.isArray(oldCache.wallpapers)) {
+      const latest = oldCache.wallpapers[0];
+      if (latest) {
+        // 尝试从旧数据中提取 urlbase
+        let urlbase = latest.urlbase;
+        if (!urlbase && latest.originSrcUrl) {
+          // 从 originSrcUrl 中提取 urlbase
+          const match = latest.originSrcUrl.match(/\/th\?id=(.+?)_UHD\.jpg/);
+          if (match) {
+            urlbase = `/th?id=${match[1]}`;
+          }
+        }
+        return {
+          urlbase,
+          time: latest.time || dayjs().format()
+        };
+      }
+    }
+    
+    // 更旧的格式：单对象
+    if (oldCache.time || oldCache.dataUrl || oldCache.srcUrl || oldCache.originSrcUrl) {
+      let urlbase = oldCache.urlbase;
+      if (!urlbase && oldCache.originSrcUrl) {
+        const match = oldCache.originSrcUrl.match(/\/th\?id=(.+?)_UHD\.jpg/);
+        if (match) {
+          urlbase = `/th?id=${match[1]}`;
+        }
+      }
       return {
-        wallpapers: [{
-          dataUrl: oldCache.dataUrl,
-          thumbnailDataUrl: oldCache.thumbnailDataUrl,
-          originSrcUrl: oldCache.originSrcUrl,
-          time: oldCache.time || dayjs().format(),
-          srcUrl: oldCache.srcUrl,
-          thumbnailUrl: oldCache.thumbnailUrl
-        }],
-        lastUpdateTime: oldCache.time || dayjs().format()
+        urlbase,
+        time: oldCache.time || dayjs().format()
       };
     }
     
     return null;
   }
 
-  // 从壁纸对象创建 URL
-  createUrlFromWallpaper(wallpaper) {
-    if (!wallpaper) return null;
+  /**
+   * 从元数据创建远程 URL
+   */
+  createUrlFromMetadata(metadata) {
+    if (!metadata?.urlbase) return null;
     
-    try {
-      if (wallpaper.dataUrl) {
-        const blob = base64ToBlob(wallpaper.dataUrl);
-        const localSrcUrl = URL.createObjectURL(blob);
-        let localThumbnailUrl = localSrcUrl;
-        
-        if (wallpaper.thumbnailDataUrl) {
-          const thumbBlob = base64ToBlob(wallpaper.thumbnailDataUrl);
-          localThumbnailUrl = URL.createObjectURL(thumbBlob);
-        }
-        
-        return {
-          srcUrl: localSrcUrl,
-          thumbnailUrl: localThumbnailUrl
-        };
-      } else if (wallpaper.srcUrl) {
-        // 兼容老数据结构：只有远程地址，没有 base64
-        return {
-          srcUrl: wallpaper.srcUrl,
-          thumbnailUrl: wallpaper.thumbnailUrl || wallpaper.srcUrl
-        };
-      }
-    } catch (e) {
-      console.error('解析本地 Bing 背景缓存失败：', e);
-    }
-    
-    return null;
+    return {
+      srcUrl: `https://cn.bing.com${metadata.urlbase}_UHD.jpg`,
+      thumbnailUrl: `https://cn.bing.com${metadata.urlbase}_800x600.jpg`
+    };
   }
 
-  // 查找壁纸：优先当天，否则找最近的（近15天内）
-  findWallpaper(wallpapers) {
-    if (!wallpapers || !Array.isArray(wallpapers) || wallpapers.length === 0) {
-      return null;
-    }
-    
-    const today = dayjs();
-    
-    // 先找当天的
-    const todayWallpaper = wallpapers.find(wp => {
-      if (!wp.time) return false;
-      return dayjs(wp.time).isSame(today, 'day');
-    });
-    
-    if (todayWallpaper) {
-      return { wallpaper: todayWallpaper, isToday: true };
-    }
-    
-    // 没找到当天的，找最近的（按日期倒序）
-    const sortedWallpapers = wallpapers
-      .filter(wp => wp.time) // 过滤掉没有时间的
-      .sort((a, b) => dayjs(b.time).valueOf() - dayjs(a.time).valueOf()); // 按日期倒序
-    
-    if (sortedWallpapers.length > 0) {
-      const recentWallpaper = sortedWallpapers[0];
-      const daysDiff = today.diff(dayjs(recentWallpaper.time), 'day');
-      
-      // 只返回15天内的，但如果没有其他选择，至少返回一个
-      if (daysDiff <= 15 || sortedWallpapers.length === 1) {
-        return { wallpaper: recentWallpaper, isToday: false };
-      }
-    }
-    
-    // 如果都没有，返回第一个（至少保证有壁纸）
-    if (wallpapers.length > 0) {
-      return { wallpaper: wallpapers[0], isToday: false };
-    }
-    
-    return null;
-  }
-
-  // 清理超过15天的旧壁纸，但至少保留1份
-  cleanOldWallpapers(wallpapers) {
-    if (!wallpapers || !Array.isArray(wallpapers)) {
-      return [];
-    }
-    
-    if (wallpapers.length <= 1) {
-      return wallpapers; // 至少保留1份
-    }
-    
-    const today = dayjs();
-    const validWallpapers = wallpapers.filter(wp => {
-      if (!wp.time) return true; // 没有时间的保留
-      const daysDiff = today.diff(dayjs(wp.time), 'day');
-      return daysDiff <= 15;
-    });
-    
-    // 如果清理后没有壁纸了，至少保留1份（最新的）
-    if (validWallpapers.length === 0 && wallpapers.length > 0) {
-      const sorted = wallpapers
-        .filter(wp => wp.time)
-        .sort((a, b) => dayjs(b.time).valueOf() - dayjs(a.time).valueOf());
-      return sorted.length > 0 ? [sorted[0]] : [wallpapers[0]];
-    }
-    
-    return validWallpapers.length > 0 ? validWallpapers : [wallpapers[0]];
-  }
-
+  /**
+   * 获取 Bing 壁纸
+   * 优先使用本地 Blob 缓存，否则用远程 URL
+   */
   getBingBg() {
-    return new Promise((resolve, reject) => {
-      Storage.get('bingImg').then((bingImgCache) => {
-        // 转换旧格式到新格式
-        const cache = this.convertOldCacheToNew(bingImgCache);
-        let wallpapers = cache?.wallpapers || [];
-        
-        // 查找可用的壁纸
-        const found = this.findWallpaper(wallpapers);
-        
-        // 如果有缓存的壁纸，立即返回使用（保证壁纸始终可见）
-        if (found && found.wallpaper) {
-          const urlResult = this.createUrlFromWallpaper(found.wallpaper);
-          if (urlResult) {
-            // 如果使用的是当天壁纸，不需要加载新壁纸
-            if (found.isToday) {
-              this.isLoadingWallpaper = false;
-              resolve(urlResult);
-              return;
-            }
-            
-            // 如果使用的是旧壁纸，先返回旧壁纸，然后在后台加载新壁纸
+    return new Promise(async (resolve, reject) => {
+      try {
+        // 1. 先尝试读取本地 Blob 缓存（最快）
+        const [srcBlob, thumbBlob] = await Promise.all([
+          Storage.getBlob('bingWallpaper').catch(() => null),
+          Storage.getBlob('bingWallpaperThumb').catch(() => null)
+        ]);
+
+        if (srcBlob) {
+          const srcUrl = URL.createObjectURL(srcBlob);
+          const thumbnailUrl = thumbBlob ? URL.createObjectURL(thumbBlob) : srcUrl;
+          
+          this.isLoadingWallpaper = false;
+          
+          // 检查是否需要更新（每天更新一次）
+          const metadata = await Storage.get('bingImg').catch(() => null);
+          const cache = this.convertOldCacheToNew(metadata);
+          const isToday = cache?.time && dayjs(cache.time).isSame(dayjs(), 'day');
+          
+          if (!isToday) {
+            // 后台更新新壁纸
             this.isLoadingWallpaper = true;
-            resolve(urlResult);
+            this.loadNewBingWallpaper().catch(err => {
+              console.error('后台更新 Bing 壁纸失败：', err);
+              this.isLoadingWallpaper = false;
+            });
+          }
+          
+          resolve({ srcUrl, thumbnailUrl });
+          return;
+        }
+
+        // 2. 没有本地 Blob，检查是否有元数据（可以用远程 URL）
+        const metadata = await Storage.get('bingImg').catch(() => null);
+        const cache = this.convertOldCacheToNew(metadata);
+        
+        if (cache?.urlbase) {
+          const urls = this.createUrlFromMetadata(cache);
+          if (urls) {
+            // 先返回远程 URL（快速显示）
+            this.isLoadingWallpaper = true;
+            resolve(urls);
             
-            // 后台加载今天的壁纸（不需要显示loading提示）
-            this.loadNewWallpaper(cache, wallpapers, null).catch(err => {
-              console.error('后台加载新壁纸失败：', err);
+            // 后台下载并存储 Blob
+            this.downloadAndStoreBingBlob(cache.urlbase).then(() => {
+              this.isLoadingWallpaper = false;
+            }).catch(err => {
+              console.error('后台下载 Bing 壁纸失败：', err);
               this.isLoadingWallpaper = false;
             });
             return;
           }
         }
-        
-        // 没有任何缓存，需要首次加载
-        this.isFirstLoad = true;
-        this.isLoadingWallpaper = true;
-        
-        // 显示初始化提示
-        let hideLoading = null;
-        if (this.rootStore?.tools?.messageApi) {
-          hideLoading = this.rootStore.tools.messageApi.loading('当前正在初始化壁纸，请稍后', 0);
-        }
-        
-        // 加载新壁纸
-        this.loadNewWallpaper(cache, wallpapers, hideLoading)
-          .then((urlResult) => {
-            if (urlResult) {
-              resolve(urlResult);
-            } else {
-              reject(new Error('加载壁纸失败'));
-            }
-          })
-          .catch((err) => {
-            reject(err);
-          });
-      }).catch((err) => {
-        console.error('读取 Bing 背景缓存失败：', err);
-        // 读取缓存失败，当作首次加载处理
+
+        // 3. 完全没有缓存，首次加载
         this.isFirstLoad = true;
         this.isLoadingWallpaper = true;
         
@@ -484,181 +403,145 @@ export default class HomeStores {
           hideLoading = this.rootStore.tools.messageApi.loading('当前正在初始化壁纸，请稍后', 0);
         }
         
-        this.loadNewWallpaper(null, [], hideLoading)
-          .then((urlResult) => {
-            if (urlResult) {
-              resolve(urlResult);
-            } else {
-              reject(new Error('加载壁纸失败'));
-            }
-          })
-          .catch((rejectErr) => {
-            reject(rejectErr);
-          });
-      });
+        const result = await this.loadNewBingWallpaper(hideLoading);
+        resolve(result);
+      } catch (err) {
+        reject(err);
+      }
     });
   }
 
-  // 加载新壁纸
-  loadNewWallpaper(existingCache, existingWallpapers, hideLoading = null) {
-    return new Promise((resolve, reject) => {
-      api
-        .get(
-          `https://cn.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=zh-CN`
-        )
-        .then(async (res) => {
-          if (res && res.images && res.images[0]) {
-            const { urlbase } = res.images[0];
-            const originSrcUrl = `https://cn.bing.com${urlbase}_UHD.jpg`;
+  /**
+   * 加载新的 Bing 壁纸
+   */
+  async loadNewBingWallpaper(hideLoading = null) {
+    try {
+      const res = await api.get(
+        `https://cn.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&mkt=zh-CN`
+      );
 
-            try {
-              // 将 UHD 图片转为 base64
-              const dataUrl = await getBase64Image(originSrcUrl);
-              let thumbnailDataUrl = null;
+      if (res?.images?.[0]) {
+        const { urlbase } = res.images[0];
+        const srcUrl = `https://cn.bing.com${urlbase}_UHD.jpg`;
+        const thumbnailUrl = `https://cn.bing.com${urlbase}_800x600.jpg`;
 
-              try {
-                // 生成一张较小的缩略图
-                thumbnailDataUrl = await createThumbnail(originSrcUrl, 800, 600);
-              } catch (thumbErr) {
-                console.error('生成 Bing 背景缩略图失败：', thumbErr);
-              }
+        // 先用远程 URL 显示
+        this.bgUrl = srcUrl;
+        this.bgThumbnailUrl = thumbnailUrl;
 
-              const blob = base64ToBlob(dataUrl);
-              const localSrcUrl = URL.createObjectURL(blob);
-
-              let localThumbnailUrl = localSrcUrl;
-              if (thumbnailDataUrl) {
-                const thumbBlob = base64ToBlob(thumbnailDataUrl);
-                localThumbnailUrl = URL.createObjectURL(thumbBlob);
-              }
-
-              // 创建新的壁纸对象
-              const newWallpaper = {
-                dataUrl,
-                thumbnailDataUrl,
-                originSrcUrl,
-                time: dayjs().format()
-              };
-
-              // 更新缓存数组：将新壁纸添加到开头，清理旧壁纸
-              let updatedWallpapers = existingWallpapers || [];
-              
-              // 检查是否已存在当天的壁纸，如果存在则替换，否则添加到开头
-              const today = dayjs();
-              const todayIndex = updatedWallpapers.findIndex(wp => 
-                wp.time && dayjs(wp.time).isSame(today, 'day')
-              );
-              
-              if (todayIndex >= 0) {
-                updatedWallpapers[todayIndex] = newWallpaper;
-              } else {
-                updatedWallpapers.unshift(newWallpaper);
-              }
-              
-              // 清理超过15天的旧壁纸，但至少保留1份
-              updatedWallpapers = this.cleanOldWallpapers(updatedWallpapers);
-
-              // 保存到缓存
-              Storage.set('bingImg', {
-                wallpapers: updatedWallpapers,
-                lastUpdateTime: dayjs().format()
-              });
-
-              // 更新显示
-              this.bgUrl = localSrcUrl;
-              this.bgThumbnailUrl = localThumbnailUrl;
-
-              // 关闭加载提示
-              this.isLoadingWallpaper = false;
-              this.isFirstLoad = false;
-              
-              if (hideLoading) {
-                hideLoading();
-              }
-
-              resolve({
-                srcUrl: localSrcUrl,
-                thumbnailUrl: localThumbnailUrl
-              });
-            } catch (e) {
-              console.error('Bing 背景 base64 转换失败，回退到直接使用远程地址：', e);
-              const srcUrl = originSrcUrl;
-              const thumbnailUrl = `https://cn.bing.com${urlbase}_800x600.jpg`;
-              
-              // 即使失败也保存远程地址
-              const newWallpaper = {
-                srcUrl,
-                thumbnailUrl,
-                originSrcUrl,
-                time: dayjs().format()
-              };
-              
-              let updatedWallpapers = existingWallpapers || [];
-              const today = dayjs();
-              const todayIndex = updatedWallpapers.findIndex(wp => 
-                wp.time && dayjs(wp.time).isSame(today, 'day')
-              );
-              
-              if (todayIndex >= 0) {
-                updatedWallpapers[todayIndex] = newWallpaper;
-              } else {
-                updatedWallpapers.unshift(newWallpaper);
-              }
-              
-              updatedWallpapers = this.cleanOldWallpapers(updatedWallpapers);
-              
-              Storage.set('bingImg', {
-                wallpapers: updatedWallpapers,
-                lastUpdateTime: dayjs().format()
-              });
-
-              this.bgUrl = srcUrl;
-              this.bgThumbnailUrl = thumbnailUrl;
-              
-              this.isLoadingWallpaper = false;
-              this.isFirstLoad = false;
-              
-              if (hideLoading) {
-                hideLoading();
-              }
-
-              resolve({
-                srcUrl,
-                thumbnailUrl
-              });
-            }
-          } else {
-            this.isLoadingWallpaper = false;
-            this.isFirstLoad = false;
-            if (hideLoading) {
-              hideLoading();
-            }
-            reject(new Error('获取壁纸数据失败'));
-          }
-        })
-        .catch((err) => {
-          console.error('加载新壁纸失败：', err);
-          this.isLoadingWallpaper = false;
-          this.isFirstLoad = false;
-          if (hideLoading) {
-            hideLoading();
-          }
-          reject(err);
+        // 保存元数据
+        await Storage.set('bingImg', {
+          urlbase,
+          time: dayjs().format()
         });
-    });
+
+        // 后台下载并存储 Blob
+        this.downloadAndStoreBingBlob(urlbase).catch(err => {
+          console.error('下载 Bing 壁纸 Blob 失败：', err);
+        });
+
+        this.isLoadingWallpaper = false;
+        this.isFirstLoad = false;
+        
+        if (hideLoading) {
+          hideLoading();
+        }
+
+        return { srcUrl, thumbnailUrl };
+      } else {
+        throw new Error('获取壁纸数据失败');
+      }
+    } catch (err) {
+      console.error('加载新 Bing 壁纸失败：', err);
+      this.isLoadingWallpaper = false;
+      this.isFirstLoad = false;
+      if (hideLoading) {
+        hideLoading();
+      }
+      throw err;
+    }
   }
 
-  getImgToCache = (type) => {
-    return new Promise((resolve, reject) => {
-      this.rootStore.option.getOption(type).then((blob) => {
-        // console.log('%c [ blob ]-167', 'font-size:13px; background:pink; color:#bf2c9f;', blob instanceof Blob)
-        if (typeof blob === 'string') {
-          blob = base64ToBlob(blob);
-        } 
-        var url = URL.createObjectURL(blob)
-        // console.log('%c [ url ]-174', 'font-size:13px; background:pink; color:#bf2c9f;', url)
-        resolve(url);
+  // ==================== 本地图片相关 ====================
+
+  /**
+   * 获取本地图片 Blob 并转为 URL
+   * 兼容旧的 base64 格式，同时支持新的 Blob 格式
+   */
+  async getLocalImageBlob(optionKey) {
+    const blobKey = `${optionKey}_blob`;
+    
+    // 1. 先尝试读取新格式的 Blob（最快）
+    try {
+      const blob = await Storage.getBlob(blobKey);
+      if (blob) {
+        return URL.createObjectURL(blob);
+      }
+    } catch (err) {
+      // Blob 不存在，继续尝试旧格式
+    }
+
+    // 2. 读取 option 里的值
+    const data = await this.rootStore.option.getOption(optionKey);
+    
+    // 如果是 __BLOB__ 标记但 Blob 读取失败，说明数据丢失
+    if (data === '__BLOB__') {
+      throw new Error('Blob data missing');
+    }
+    
+    if (!data) {
+      throw new Error('No local image data');
+    }
+
+    let blob;
+    if (data instanceof Blob) {
+      blob = data;
+      // 迁移到新格式
+      Storage.setBlob(blobKey, blob).then(() => {
+        this.rootStore.option.setItem(optionKey, '__BLOB__');
+      }).catch(err => {
+        console.error('迁移本地图片到 Blob 格式失败：', err);
       });
-    });
+    } else if (typeof data === 'string' && data.startsWith('data:')) {
+      // 旧的 base64 格式，转换为 Blob 并迁移存储
+      blob = base64ToBlob(data);
+      
+      // 迁移到新格式（后台执行）
+      Storage.setBlob(blobKey, blob).then(() => {
+        this.rootStore.option.setItem(optionKey, '__BLOB__');
+      }).catch(err => {
+        console.error('迁移本地图片到 Blob 格式失败：', err);
+      });
+    } else {
+      throw new Error('Unknown local image format');
+    }
+
+    return URL.createObjectURL(blob);
+  }
+
+  /**
+   * 保存本地图片为 Blob
+   * 用于上传图片时调用
+   */
+  async saveLocalImageBlob(optionKey, file) {
+    if (!(file instanceof Blob)) {
+      throw new Error('Invalid file type');
+    }
+
+    const blobKey = `${optionKey}_blob`;
+    await Storage.setBlob(blobKey, file);
+    
+    // 同时在 option 里保存一个标记，表示使用 Blob 存储
+    await this.rootStore.option.setItem(optionKey, '__BLOB__');
+    
+    return URL.createObjectURL(file);
+  }
+
+  /**
+   * 旧方法兼容（用于 file 类型背景）
+   * @deprecated 请使用 getLocalImageBlob
+   */
+  getImgToCache = (type) => {
+    return this.getLocalImageBlob(type);
   }
 }
