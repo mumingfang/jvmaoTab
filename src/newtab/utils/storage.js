@@ -8,21 +8,13 @@ class Storage {
   }
 
   async set(key, value) {
+    // 先删除旧数据（使用正确的方式：通过 key 索引查找并删除）
     await this.remove(key);
-    return db.cache
-      .where("key")
-      .equals(key)
-      .toArray()
-      .then((i) => {
-        if (i.length > 0) {
-          return db.cache.update(i[0].id, value);
-        } else {
-          return this.db.cache.put({
-            key,
-            ...value
-          });
-        }
-      });
+    // 插入新数据
+    return this.db.cache.put({
+      key,
+      ...value
+    });
   }
 
   async get(key) {
@@ -31,8 +23,12 @@ class Storage {
     }));
   }
 
+  /**
+   * 通过 key 字段删除记录（key 是唯一索引，不是主键）
+   */
   async remove(key) {
-    return this.db.cache.delete(key);
+    // 使用 where 查询删除，因为 key 是索引而非主键
+    return this.db.cache.where('key').equals(key).delete();
   }
 
   async setBlob(key, blob, chunkSize = 1024 * 1024) {
@@ -94,14 +90,19 @@ class Storage {
     const metadata = await this.db.cache.get({
       key: metadataKey
     });
-    console.log('%c [ metadata ]-98', 'font-size:13px; background:pink; color:#bf2c9f;', metadata)
+    
     if (metadata) {
-      // 删除所有的块
+      // 删除所有的块（使用 where 查询删除）
       for (let i = 0; i < metadata.value.totalChunks; i++) {
-        await this.db.cache.delete(`${key}_chunk_${i}`);
+        await this.db.cache.where('key').equals(`${key}_chunk_${i}`).delete();
       }
       // 删除元数据
-      await this.db.cache.delete(metadataKey);
+      await this.db.cache.where('key').equals(metadataKey).delete();
+    } else {
+      // 即使没有 metadata，也尝试清理可能存在的孤立 chunk
+      // 使用前缀匹配删除所有相关的 key
+      await this.db.cache.where('key').startsWith(`${key}_chunk_`).delete();
+      await this.db.cache.where('key').equals(metadataKey).delete();
     }
   }
 }
