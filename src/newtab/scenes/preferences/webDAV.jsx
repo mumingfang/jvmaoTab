@@ -6,6 +6,11 @@ import { useDebounceFn } from 'ahooks';
 import useStores from "~/hooks/useStores";
 import { ExclamationCircleFilled } from "@ant-design/icons";
 import _ from "lodash";
+import {
+    createWebdavConfigToken,
+    isWebdavConfigToken,
+    parseWebdavConfigToken,
+} from '~/stores/webdavConfigToken.mjs';
 
 const { confirm } = Modal;
 
@@ -16,23 +21,17 @@ const Space = styled.div`
     justify-content: space-between;
 `;
 
-const Info = styled.div`
-    display: flex;
-    color: var(--colorText);
-    font-size: 12px;
-    margin-top: 10px;
-        gap: 5px;
-    a {
-        font-size: 12px;
-        color: var(--PrimaryColor);
-    }
-`;
-
 const WebDAV = () => {
     const { option, data, tools } = useStores();
     const _option = _.cloneDeep(option.item);
     const [loading, setLoading] = React.useState(false);
     const [open, setOpen] = React.useState(false);
+    const [configForm] = Form.useForm();
+    const [backupOpen, setBackupOpen] = React.useState(false);
+    const [backupToken, setBackupToken] = React.useState('');
+    const [importOpen, setImportOpen] = React.useState(false);
+    const [importToken, setImportToken] = React.useState('');
+    const [importing, setImporting] = React.useState(false);
 
     const { webDavURL, webDavUsername, webDavPassword, webDavDir, webdavTime } = _option;
 
@@ -51,8 +50,48 @@ const WebDAV = () => {
     }, []);
 
     const onModalOpen = React.useCallback(() => {
+        configForm.setFieldsValue({
+            webDavURL: option.item.webDavURL,
+            webDavUsername: option.item.webDavUsername,
+            webDavPassword: option.item.webDavPassword,
+            webDavDir: option.item.webDavDir,
+        });
         setOpen(true);
-    }, []);
+    }, [configForm, option]);
+
+    const createBackupToken = async () => {
+        try {
+            setBackupToken(await createWebdavConfigToken(option.item));
+            setBackupOpen(true);
+        } catch (error) {
+            tools.error(error.message || '生成配置串失败');
+        }
+    };
+
+    const fillFromToken = async (token) => {
+        setImporting(true);
+        try {
+            const config = await parseWebdavConfigToken(token);
+            configForm.setFieldsValue(config);
+            setImportOpen(false);
+            setImportToken('');
+            setOpen(true);
+            tools.success('配置已填入，请检查后保存');
+        } catch (error) {
+            tools.error(error.message || '解析配置串失败');
+        } finally {
+            setImporting(false);
+        }
+    };
+
+    const copyBackupToken = async () => {
+        try {
+            await navigator.clipboard.writeText(backupToken);
+            tools.success('配置串已复制');
+        } catch {
+            tools.error('复制失败，请手动选中配置串复制');
+        }
+    };
 
     const onFinish = (v) => {
         if (!v || !data || typeof data.test !== 'function') {
@@ -62,6 +101,19 @@ const WebDAV = () => {
             return;
         }
         
+        const saveSettings = async (hasRemoteData) => {
+            data.pause();
+            try {
+                await Promise.all(Object.entries(v).map(([key, value]) => option.setItem(key, value)));
+                await option.setItem('webdavOpen', true);
+                await option.setItem('webdavExpectedRemote', hasRemoteData);
+                await option.setItem('webdavVersion', 0);
+                window.location.reload();
+            } catch (error) {
+                tools.error(error.message || '保存 WebDAV 配置失败');
+                setLoading(false);
+            }
+        };
         setLoading(true);
         data.test(v.webDavURL, v.webDavUsername, v.webDavPassword, v.webDavDir).then((res) => {
             if (res == 1) {
@@ -82,26 +134,14 @@ const WebDAV = () => {
                     okType: "danger",
                     cancelText: "取消",
                     onOk() {
-                        handleChange(v);
-                        option.setItem('webdavOpen', true);
-                        option.setItem('webdavVersion', 1);
-                        setTimeout(() => {
-                            window.location.reload();
-                        }, 1000);
+                        return saveSettings(true);
                     },
                     onCancel() {
                         setLoading(false);
                      },
                 });
             } else {
-                handleChange(v);
-                option.setItem('webdavOpen', true);
-                if (tools && typeof tools.success === 'function') {
-                    tools.success("WebDAV 设置成功");
-                }
-                setTimeout(() => {
-                    window.location.reload();
-                }, 1000);
+                saveSettings(false);
             }
 
         }).catch((err) => {
@@ -134,9 +174,16 @@ const WebDAV = () => {
                             清空
                         </Button>) : null}
                     </Space>
-                    <Info>
-                        关于WebDAV的配置教程请<a href="https://n.mumingfang.com/archives/7576.html" target="_blank" rel="noreferrer" >点击这里</a>
-                    </Info>
+                    <div style={{ display: 'flex', gap: 16, marginTop: 10 }}>
+                        <a href="#webdav-config" onClick={(event) => {
+                            event.preventDefault();
+                            setImportOpen(true);
+                        }}>粘贴配置串</a>
+                        {webDavURL ? <a href="#webdav-config" onClick={(event) => {
+                            event.preventDefault();
+                            createBackupToken();
+                        }}>生成加密配置串</a> : null}
+                    </div>
                 </Form.Item>
                 <Divider />
                 <Form.Item label="同步间隔时间" name='webdavTime'>
@@ -156,13 +203,14 @@ const WebDAV = () => {
             <Modal
                 title="设置 WebDAV"
                 centered
-                wrapClassName={``}
+                forceRender
                 open={open}
                 onCancel={onModalClose}
                 footer={null}
                 width={320}
             >
                 <Form
+                    form={configForm}
                     layout="vertical"
                     initialValues={{
                         webDavURL,
@@ -226,6 +274,32 @@ const WebDAV = () => {
                         </Button>
                     </Form.Item>
                 </Form>
+            </Modal>
+            <Modal title="备份 WebDAV 配置" open={backupOpen} footer={null}
+                onCancel={() => setBackupOpen(false)}>
+                <p>配置串包含可还原的账号和密码，请像密码一样保管。</p>
+                <Input.TextArea value={backupToken} readOnly autoSize={{ minRows: 4, maxRows: 8 }} />
+                <Button type="primary" block style={{ marginTop: 12 }} onClick={copyBackupToken}>
+                    复制配置串
+                </Button>
+            </Modal>
+            <Modal title="粘贴 WebDAV 配置串" open={importOpen} footer={null}
+                onCancel={() => setImportOpen(false)}>
+                <p>粘贴后会自动解析并填入设置表单，检查后再保存连接。</p>
+                <Input.TextArea value={importToken} autoSize={{ minRows: 4, maxRows: 8 }}
+                    onChange={(event) => setImportToken(event.target.value)}
+                    onPaste={(event) => {
+                        const pasted = event.clipboardData.getData('text').trim();
+                        if (isWebdavConfigToken(pasted)) {
+                            event.preventDefault();
+                            setImportToken(pasted);
+                            fillFromToken(pasted);
+                        }
+                    }} />
+                <Button type="primary" block style={{ marginTop: 12 }} loading={importing}
+                    onClick={() => fillFromToken(importToken)}>
+                    解析并填入
+                </Button>
             </Modal>
         </>
 

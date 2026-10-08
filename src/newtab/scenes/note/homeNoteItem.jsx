@@ -225,7 +225,7 @@ const HomeNoteItem = (props) => {
         }
         positionRef.current = next;
         setPosition(next);
-        saveNotePosition(kId, next.x, next.y);
+        // 视口变化只调整当前页面的显示；用户拖动时才保存并同步坐标。
     });
 
     const onContextMenu = React.useCallback((e) => {

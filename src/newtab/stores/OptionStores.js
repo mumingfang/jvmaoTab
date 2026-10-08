@@ -13,7 +13,7 @@ import {
   getID
 } from "~/utils";
 
-const localStorageKeys = ['bgType', 'bg2Type', 'bgBase64', 'bg2Base64', 'webdavVersion'];
+const localStorageKeys = ['bgType', 'bg2Type', 'bgBase64', 'bg2Base64', 'webdavVersion', 'webdavDataEtag'];
 
 const v = 16;
 const updateOptions = {
@@ -124,6 +124,7 @@ export default class OptionStores {
   item = {};
   showHide = false;
   isResetOption = false;
+  isRestoringWebDAV = false;
   rootStore;
 
   constructor(rootStore) {
@@ -157,7 +158,7 @@ export default class OptionStores {
             try {
               const syncData = await new Promise((resolve, reject) => {
                 if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync) {
-                  chrome.storage.sync.get(['webDavURL', 'webDavUsername', 'webDavPassword', 'webDavDir'], (result) => {
+                  chrome.storage.sync.get(['webDavURL', 'webDavUsername', 'webDavPassword', 'webDavDir', 'webdavExpectedRemote'], (result) => {
                     if (chrome.runtime.lastError) {
                       reject(chrome.runtime.lastError);
                     } else {
@@ -172,10 +173,9 @@ export default class OptionStores {
               // 如果存在完整的 WebDAV 配置，尝试恢复
               if (syncData?.webDavURL && syncData?.webDavUsername && syncData?.webDavPassword && syncData?.webDavDir) {
                 console.log('[WebDAV恢复] 检测到 Chrome Storage Sync 中有 WebDAV 配置，尝试恢复数据...');
-                
-                // 先初始化默认选项，等待一下确保默认选项已设置
-                this.update(0);
-                await new Promise(resolve => setTimeout(resolve, 300));
+                this.isRestoringWebDAV = true;
+                // 等待默认选项真正落盘；固定延时可能让默认链接抢先上传。
+                if (!await this.update(0)) throw new Error('初始化选项失败');
                 
                 // 先设置 webDavURL（确保 data.update() 能正确执行）
                 await this.setOption('webDavURL', syncData.webDavURL);
@@ -196,19 +196,21 @@ export default class OptionStores {
                 // 设置 WebDAV 开启状态和版本号
                 await this.setOption('webdavOpen', true);
                 await this.setOption('webdavVersion', syncData.webdavVersion || 1);
+                const expectedRemote = syncData.webdavExpectedRemote ?? true;
+                await this.setOption('webdavExpectedRemote', expectedRemote);
                 this.item.webdavOpen = true;
                 this.item.webdavVersion = syncData.webdavVersion || 1;
+                this.item.webdavExpectedRemote = expectedRemote;
                 
                 // 标记已初始化，避免后续流程再次触发
                 this.isInit = true;
                 
-                // 等待一下确保数据已保存，然后触发 WebDAV 数据拉取
-                setTimeout(() => {
-                  this.rootStore.data.init();
-                  setTimeout(() => {
-                    this.rootStore.home.onLoadBg();
-                  }, 1000);
-                }, 500);
+                await this.rootStore.data.init();
+                if (this.rootStore.data.ready) {
+                  this.isRestoringWebDAV = false;
+                  this.rootStore.link.init();
+                  this.rootStore.home.onLoadBg();
+                }
                 
                 return;
               }
@@ -239,7 +241,8 @@ export default class OptionStores {
 
           chrome.runtime.sendMessage({
             type: "getOption",
-          }, (response) => {
+          }, async (response = {}) => {
+            const pendingWrites = [];
             for (const key in response) {
               const rawValue = response[key];
               const value = normalizeOptionValue(key, rawValue);
@@ -258,15 +261,20 @@ export default class OptionStores {
                 }
 
                 if (!equation) {
-                  this.setItem(key, value, isInvalidOptionValue(key, rawValue));
+                  pendingWrites.push(this.setItem(key, value, isInvalidOptionValue(key, rawValue)));
                 }
               }
             }
 
-            if (this.item["v"] !== v) {
-              this.update(this.item["v"] || 0);
+            try {
+              await Promise.all(pendingWrites);
+              if (this.item["v"] !== v && !await this.update(this.item["v"] || 0)) {
+                throw new Error('本地选项升级失败');
+              }
+              await this.rootStore.data.init();
+            } catch (error) {
+              this.rootStore.tools.error(`初始化同步失败: ${error.message}`);
             }
-            this.rootStore.data.init();
 
           });
 
@@ -302,37 +310,33 @@ export default class OptionStores {
   update(_v, home_id) {
     try {
       const defaultOption = this.getNewOptionToValue(_v, this.item);
-
-      chrome.runtime.sendMessage({
-        type: "getOption",
-      }, (response) => {
-
-        for (const key in response) {
-          const v = normalizeOptionValue(key, response[key]);
-          if (typeof defaultOption[key] !== 'undefined') {
-            defaultOption[key] = v
-          }
-        }
-
-        if (typeof home_id !== 'undefined') {
-          defaultOption["homeId"] = home_id
-        }
-
-        console.log('%c [ defaultOption ]-181', 'font-size:13px; background:pink; color:#bf2c9f;', defaultOption)
-
-        Object.keys(defaultOption).forEach((key) => {
-
-          if (typeof this.item[key] === "undefined" || isInvalidOptionValue(key, this.item[key]) || home_id && key === 'homeId') {
-            this.setItem(key, defaultOption[key]);
+      return new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: "getOption" }, async (response = {}) => {
+          try {
+            for (const key in response) {
+              const value = normalizeOptionValue(key, response[key]);
+              if (typeof defaultOption[key] !== 'undefined') defaultOption[key] = value;
+            }
+            if (typeof home_id !== 'undefined') defaultOption.homeId = home_id;
+            for (const key of Object.keys(defaultOption)) {
+              if (typeof this.item[key] === 'undefined' || isInvalidOptionValue(key, this.item[key]) || home_id && key === 'homeId') {
+                await this.setItem(key, defaultOption[key]);
+              }
+            }
+            await this.setItem('v', v);
+            this.isInit = true;
+            resolve(true);
+          } catch (error) {
+            console.error(error);
+            this.rootStore.tools.error('数据更新失败, T101');
+            resolve(false);
           }
         });
-        this.setItem("v", v);
-        this.isInit = true;
       });
-
     } catch (error) {
       console.error(error);
       this.rootStore.tools.error('数据更新失败, T101');
+      return Promise.resolve(false);
     }
   }
 
@@ -375,8 +379,8 @@ export default class OptionStores {
       db.option
         .toArray()
         .then((res) => {
-          console.log('%c [ res ]-241', 'font-size:13px; background:pink; color:#bf2c9f;', res)
           if (res.length === 0) {
+            reject(new Error('导入后选项表为空'));
             return;
           }
           res.forEach((item) => {
@@ -385,7 +389,6 @@ export default class OptionStores {
             data[item.key] = value;
 
           });
-          console.log('%c [ data ]-248', 'font-size:13px; background:pink; color:#bf2c9f;', data)
           chrome.runtime.sendMessage({
             type: "setOptions",
             data,
@@ -403,7 +406,6 @@ export default class OptionStores {
 
   setItem(key, value, save = true) {
     const normalizedValue = normalizeOptionValue(key, value);
-    console.log('%c [ value ]-225', 'font-size:13px; background:pink; color:#bf2c9f;', key, normalizedValue)
     this.item[key] = normalizedValue;
     return this.setOption(key, normalizedValue).then(() => {
       if (save) {

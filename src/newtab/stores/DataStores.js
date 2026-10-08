@@ -13,11 +13,14 @@ import {
 } from "~/db";
 import { handleError } from "~/utils/errorHandler";
 import _ from "lodash";
+import { canReplaceRemote, decideSync, fileFingerprint, inspectSnapshot, parseVersion, readRemoteHeader, readRemoteState, sameEtag, snapshotFingerprint, withSnapshotVersion } from './webdavSyncSafety.mjs';
+import { saveWebdavLocalBackup } from './webdavLocalBackup.js';
 
 const devJsonName = '/jvmao-tab.json';
 const devVName = '/jvmao-version.txt';
 
-const localStorageKeys = ['bgType', 'bg2Type', 'bgBase64', 'bg2Base64', 'webdavVersion'];
+const localStorageKeys = ['bgType', 'bg2Type', 'bgBase64', 'bg2Base64', 'webdavVersion', 'webDavURL', 'webDavUsername', 'webDavPassword', 'webDavDir', 'webdavExpectedRemote'];
+const baselineStorageKey = 'webdavSyncBaseline';
 
 const progressCallback = () => {}
 export default class DataStores {
@@ -26,6 +29,14 @@ export default class DataStores {
   lock = false;
   waitType = '';
   cache = {};
+  ready = false;
+  remoteVersion = null;
+  remoteData = null;
+  remoteEtag = null;
+  dirtyDuringPush = false;
+  suppressUpdates = false;
+  connectionKey = '';
+  baseline = null;
 
   constructor(rootStore) {
     makeObservable(this, {
@@ -42,38 +53,24 @@ export default class DataStores {
     this.rootStore = rootStore;
   }
 
-  test = (url, username, password, dir) => {
-    this.client = createClient(url, {
+  test = async (url, username, password, dir) => {
+    const client = createClient(url, {
       username,
       password
     });
-
-    const blob = new Blob(['1'], {
-      type: 'text/plain'
-    });
-
-    return new Promise((resolve, reject) => {
-      this.writeFile(dir + '/jvmao-init.text', blob).then((data) => {
-        // 删除测试文件，忽略删除错误（文件可能不存在）
-        this.client.deleteFile(dir + '/jvmao-init.text').catch(() => {});
-        this.readFile(dir + devVName).then((data) => {
-          if (data) {
-            resolve(1); // 远端有数据
-          } else {
-            resolve(0); // 远端无数据
-          }
-        }).catch((error) => {
-          resolve(0); // 远端无数据
-        })
-      }).catch((error) => {
-        handleError(error, "DataStores.test");
-        this.client = null;
-        reject();
-      });
-    });
+    const testPath = dir + '/jvmao-init.text';
+    try {
+      await client.putFileContents(testPath, '1', { overwrite: true });
+      await client.deleteFile(testPath);
+      const remote = await this.readRemoteState(client, dir);
+      return remote.data === null ? 0 : 1;
+    } catch (error) {
+      handleError(error, 'DataStores.test');
+      throw error;
+    }
   }
 
-  init = () => {
+  init = async () => {
     const {
       webDavURL = '',
         webDavUsername = '',
@@ -86,8 +83,16 @@ export default class DataStores {
       return;
     }
 
-    if (!this.client) {
+    const connectionKey = JSON.stringify([webDavURL, webDavUsername, webDavPassword, webDavDir]);
+    if (!this.client || this.connectionKey !== connectionKey) {
+      this._update.cancel?.();
+      this.ready = false;
+      this.remoteVersion = null;
+      this.remoteData = null;
+      this.remoteEtag = null;
+      this.baseline = null;
       this.dir = webDavDir;
+      this.connectionKey = connectionKey;
       this._update = _.debounce(() => {
         this.push();
       }, 1000 * webdavTime)
@@ -97,92 +102,177 @@ export default class DataStores {
       });
     }
 
-    this.pull();
+    return this.pull();
   }
 
-  pull = () => {
-    // 如果正在执行同步操作，跳过本次拉取
+  readRemoteState = async (client = this.client, dir = this.dir) => {
+    return readRemoteState(client, dir);
+  }
+
+  readRemoteHeader = async (client = this.client, dir = this.dir) => {
+    return readRemoteHeader(client, dir);
+  }
+
+  readVerifiedRemoteState = async (initialHeader) => {
+    let before = initialHeader || await this.readRemoteHeader();
+    const attempts = [];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const remote = await this.readRemoteState();
+      const after = await this.readRemoteHeader();
+      const downloadedSize = remote.data === null ? null : new Blob([remote.data]).size;
+      const versionMismatch = before.version !== remote.version || after.version !== remote.version;
+      const embeddedVersionMismatch = remote.embeddedVersion != null &&
+        remote.embeddedVersion !== remote.version;
+      const etagMismatch = !!(before.dataEtag && remote.dataEtag &&
+        !sameEtag(before.dataEtag, remote.dataEtag)) ||
+        !!(after.dataEtag && remote.dataEtag && !sameEtag(after.dataEtag, remote.dataEtag));
+      const sizeMismatch = (before.dataSize != null && before.dataSize !== downloadedSize) ||
+        (after.dataSize != null && after.dataSize !== downloadedSize);
+      if (!versionMismatch && !embeddedVersionMismatch && !etagMismatch && !sizeMismatch) {
+        return { header: after, remote };
+      }
+      attempts.push({
+        reason: [versionMismatch && 'version', embeddedVersionMismatch && 'embedded-version',
+          etagMismatch && 'data-etag',
+          sizeMismatch && 'data-size'].filter(Boolean),
+        before: { version: before.version, dataEtag: before.dataEtag, dataSize: before.dataSize },
+        downloaded: {
+          version: remote.version, embeddedVersion: remote.embeddedVersion,
+          dataEtag: remote.dataEtag, dataSize: downloadedSize
+        },
+        after: { version: after.version, dataEtag: after.dataEtag, dataSize: after.dataSize }
+      });
+      before = after;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+    }
+    console.error('[WebDAV 同步][remote-snapshot-inconsistent]', {
+      attempts, checkedAt: new Date().toISOString()
+    });
+    throw new Error('远端文件状态与下载内容持续不一致，已停止同步，请稍后重试');
+  }
+
+  connectionId = () => JSON.stringify([
+    this.rootStore.option.item.webDavURL,
+    this.rootStore.option.item.webDavUsername,
+    this.rootStore.option.item.webDavDir
+  ]);
+
+  loadBaseline = async () => {
+    const result = await new Promise((resolve, reject) => {
+      chrome.storage.local.get(baselineStorageKey, (value) => {
+        if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+        else resolve(value || {});
+      });
+    });
+    const baseline = result[baselineStorageKey];
+    this.baseline = baseline?.connectionId === this.connectionId() &&
+      Number.isSafeInteger(baseline.version) && baseline.localHash && baseline.remoteHash
+      ? baseline : null;
+    return this.baseline;
+  }
+
+  saveBaseline = async (version, dataEtag, localHash, remoteHash = localHash) => {
+    const baseline = { connectionId: this.connectionId(), version, dataEtag, localHash, remoteHash };
+    await new Promise((resolve, reject) => {
+      chrome.storage.local.set({ [baselineStorageKey]: baseline }, () => {
+        if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+        else resolve();
+      });
+    });
+    this.baseline = baseline;
+  }
+
+  withProfileLock = (operation) => {
+    if (navigator.locks?.request) {
+      return navigator.locks.request('jvmao-webdav-sync', { mode: 'exclusive' }, operation);
+    }
+    return operation();
+  }
+
+  pull = async () => {
+    const pushLocal = await this.withProfileLock(() => this.pullLocked());
+    if (pushLocal && this.ready) await this.push();
+  }
+
+  pullLocked = async () => {
     if (this.lock) {
-      console.log('同步操作进行中，跳过本次拉取');
       return;
     }
-
-    const {
-      webdavVersion = 1,
-    } = this.rootStore.option.item;
-
-    this.readFile(this.dir + devVName).then((data) => {
-
-      if (!data || data.trim() === '') {
-        // 远端没有版本号文件，推送本地数据
-        this.push();
+    this.lock = true;
+    this.ready = false;
+    this.waitType = 'pull';
+    let pushLocal = false;
+    try {
+      let header = await this.readRemoteHeader();
+      const baseline = await this.loadBaseline();
+      const localVersion = parseVersion(this.rootStore.option.item.webdavVersion ?? 1);
+      if (header.version === null) {
+        if (baseline || this.rootStore.option.item.webdavExpectedRemote || localVersion > 1) {
+          throw new Error('预期远端已有数据，但未读到数据文件；已停止上传');
+        }
+        this.remoteVersion = null;
+        this.remoteData = null;
+        this.remoteEtag = null;
+        this.ready = true;
+        // 空目录不自动接收初始化数据；已有真实数据也等下一次用户修改再上传。
         return;
       }
-
-      // 兼容旧版本版本号可能是字符串的情况
-      let yunNyum = parseInt(data);
-      let num = parseInt(webdavVersion);
-      
-      // 如果解析失败，尝试从字符串中提取数字（兼容旧版本）
-      if (isNaN(yunNyum)) {
-        const match = String(data).match(/\d+/);
-        if (match) {
-          yunNyum = parseInt(match[0]);
-          console.warn('远端版本号格式异常，已自动修复:', data, '->', yunNyum);
+      const localBlob = await this.get_dbData();
+      const localData = await localBlob.text();
+      const localInfo = inspectSnapshot(localData);
+      const localHash = await snapshotFingerprint(localData);
+      // ETag 缺失时不能用大小或修改时间猜测内容，必须读取完整文件核对。
+      const metadataMatches = baseline && header.dataEtag &&
+        header.version === baseline.version && sameEtag(header.dataEtag, baseline.dataEtag);
+      const verified = metadataMatches ? null : await this.readVerifiedRemoteState(header);
+      if (verified) header = verified.header;
+      const remote = verified?.remote || null;
+      const remoteHash = remote ? await fileFingerprint(remote.data) : baseline.remoteHash;
+      const remoteChanged = !baseline || header.version !== baseline.version || remoteHash !== baseline.remoteHash;
+      const decision = decideSync({
+        hasBaseline: !!baseline, remoteChanged,
+        localChanged: !!baseline && localHash !== baseline.localHash, remoteExists: true
+      });
+      if (decision === 'pull') {
+        if (remote.info.isBootstrap && !localInfo.isBootstrap) {
+          throw new Error('远端是初始化数据，已保留本地数据并停止同步');
+        }
+        const imported = await this._pull(remote.version, remote.data);
+        if (!imported) return;
+        const importedData = await (await this.get_dbData()).text();
+        await this.saveBaseline(remote.version, remote.dataEtag, await snapshotFingerprint(importedData), remoteHash);
+      } else if (remote && baseline && !remoteChanged && !sameEtag(header.dataEtag, baseline.dataEtag)) {
+        await this.saveBaseline(remote.version, remote.dataEtag, baseline.localHash, remoteHash);
+      }
+      this.remoteVersion = header.version;
+      this.remoteData = remote?.data ?? null;
+      this.remoteEtag = header.dataEtag;
+      this.suppressUpdates = true;
+      try {
+        await this.rootStore.option.setItem('webdavDataEtag', header.dataEtag || '');
+      } finally {
+        this.suppressUpdates = false;
+      }
+      if (!this.rootStore.option.item.webdavExpectedRemote) {
+        this.suppressUpdates = true;
+        try {
+          await this.rootStore.option.setItem('webdavExpectedRemote', true);
+        } finally {
+          this.suppressUpdates = false;
         }
       }
-      
-      if (isNaN(num)) {
-        const match = String(webdavVersion).match(/\d+/);
-        if (match) {
-          num = parseInt(match[0]);
-          console.warn('本地版本号格式异常，已自动修复:', webdavVersion, '->', num);
-        }
-      }
-      
-      // 判断这两个值是否是NaN
-      if (isNaN(yunNyum) || isNaN(num)) {
-        this.rootStore.tools.error(`同步拉取异常: 版本号格式错误 (远端: ${data}, 本地: ${webdavVersion})`);
-        return;
-      }
-      
-      if (yunNyum == num) {
-        // 版本号相同，无需同步
-        return;
-      } else if (yunNyum < num) {
-        // 远端版本号小于本地，推送本地数据
-        this.push();
-        return;
-      } else {
-        // 远端版本号大于本地，拉取远端数据
-        this._pull(yunNyum);
-      }
-    }).catch((error) => {
-      if (error.message && error.message.includes('404')) {
-        // 远端文件不存在，推送本地数据
-        this.push();
-      } else {
-        this.rootStore.tools.error(`同步拉取异常: ${error.message || '未知错误'}`);
-      }
-
-    });
+      this.ready = true;
+      pushLocal = decision === 'push';
+    } catch (error) {
+      this.rootStore.tools.error(`同步拉取异常: ${error.message || '未知错误'}`);
+    } finally {
+      this.lock = false;
+      this.waitType = '';
+    }
+    return pushLocal;
   }
 
-  _pull = async (webdavVersion) => {
-    // 兼容旧版本版本号可能是字符串的情况
-    let versionNum = parseInt(webdavVersion);
-    if (isNaN(versionNum)) {
-      // 尝试从字符串中提取数字
-      const match = String(webdavVersion).match(/\d+/);
-      if (match) {
-        versionNum = parseInt(match[0]);
-        console.warn('版本号格式异常，已自动修复:', webdavVersion, '->', versionNum);
-      } else {
-        console.error('拉取远端错误: webdavVersion 不是有效数字', webdavVersion);
-        return;
-      }
-    }
-    webdavVersion = versionNum; // 使用修复后的版本号
+  _pull = async (webdavVersion, data) => {
 
     const {
       option,
@@ -193,26 +283,31 @@ export default class DataStores {
     
     // 先备份当前数据，以防导入失败
     let backupBlob = null;
+    let databaseMayBeChanged = false;
     try {
       backupBlob = await this.get_dbData();
+      if (!backupBlob || backupBlob.size === 0) throw new Error('本地备份为空');
+      const backupText = await backupBlob.text();
+      const backupInfo = inspectSnapshot(backupText);
+      // 初始化数据无需留存；真实数据先保存在独立的本地数据库，再替换主数据库。
+      if (!backupInfo.isBootstrap) {
+        await saveWebdavLocalBackup(backupBlob, await snapshotFingerprint(backupText));
+      }
     } catch (error) {
       console.error('备份数据失败:', error);
-      // 即使备份失败也继续，但会记录错误
+      // 无法备份时不能删除现有数据库。
+      throw error;
     }
 
     try {
-      this.lock = true;
-      this.waitType = 'pull';
+      this.suppressUpdates = true;
+      this.cache = {};
       localStorageKeys.forEach((key) => {
-        const value = option.item[key];
-        if (value) {
-          this.cache[key] = value;
+        if (Object.prototype.hasOwnProperty.call(option.item, key)) {
+          this.cache[key] = option.item[key];
         }
       });
 
-      // 读取远端数据文件
-      const data = await this.readFile(this.dir + devJsonName);
-      
       if (!data || data.trim() === '') {
         throw new Error('远端数据文件为空');
       }
@@ -270,7 +365,21 @@ export default class DataStores {
         // 不抛出错误，让 db.import 来处理
       }
 
+      const { remote: latestRemote } = await this.readVerifiedRemoteState();
+      if (latestRemote.version !== webdavVersion || latestRemote.data !== data) {
+        console.error('[WebDAV 同步][pull:changed-before-import]', {
+          expectedVersion: webdavVersion,
+          actualVersion: latestRemote.version,
+          contentChanged: latestRemote.data !== data,
+          expectedSize: new Blob([data]).size,
+          actualSize: latestRemote.data === null ? null : new Blob([latestRemote.data]).size,
+          checkedAt: new Date().toISOString()
+        });
+        throw new Error('远端在拉取过程中发生变化，请重新打开页面');
+      }
+
       // 只有在验证通过后才删除数据库
+      databaseMayBeChanged = true;
       await db.delete();
 
       if (!db.isOpen()) {
@@ -285,67 +394,38 @@ export default class DataStores {
         progressCallback
       });
 
-      // 验证导入后的数据
+      // 验证导入后的实际记录数，不能只检查导出文件大小。
       const importedData = await this.get_dbData();
       if (!importedData || importedData.size === 0) {
         throw new Error('导入后数据验证失败：数据为空或大小为0');
       }
-
-      // 验证导入的数据至少包含一些表（兼容旧版本）
-      try {
-        const importedText = await importedData.text();
-        const importedJson = JSON.parse(importedText);
-        if (!importedJson.data) {
-          throw new Error('导入后数据验证失败：缺少 data 字段');
-        }
-        // 旧版本可能没有 tables 字段，所以只验证存在时不为空
-        if (importedJson.data.tables && Object.keys(importedJson.data.tables).length === 0) {
-          throw new Error('导入后数据验证失败：数据表为空');
-        }
-        // 如果没有 tables 字段，可能是旧版本格式，不强制要求
-        if (!importedJson.data.tables) {
-          console.warn('导入的数据缺少 tables 字段（可能是旧版本格式），但数据已成功导入');
-        }
-      } catch (verifyError) {
-        // 如果是解析错误，可能是旧版本格式，尝试继续
-        if (verifyError.message.includes('tables')) {
-          console.warn('数据验证警告（可能是旧版本格式）:', verifyError.message);
-          // 不抛出错误，允许继续
-        } else {
-          throw new Error(`导入后数据验证失败: ${verifyError.message}`);
-        }
+      const expected = inspectSnapshot(data);
+      const actual = inspectSnapshot(await importedData.text());
+      if (actual.links !== expected.links || actual.notes !== expected.notes) {
+        throw new Error('导入后链接或便签数量不一致');
       }
 
-      // 导入成功，更新版本号
-      setTimeout(() => {
-        option.setItem('webdavVersion', parseInt(webdavVersion)); // 强行刷新版本号
-        localStorageKeys.forEach((key) => {
-          if (key != 'webdavVersion') {
-            const value = this.cache[key];
-            option.setItem(key, value);
-          }
-        });
-        option.resetChromeSaveOption().then(() => {
-          // 数据拉取成功
-        }).catch((error) => {
-          console.error(error);
-          tools.error(`同步数据错误: ${error.message}`);
-        }).finally(() => {
-          setTimeout(() => {
-            link.restart();
-            note.init();
-            this.lock = false;
-            this.waitType = '';
-            
-            if (db.verno !== databaseVersion) {
-              db.__upgrade(db);
-            }
-          }, 200);
-        });
-      }, 0);
+      // 等待版本号及本地专用选项真正落盘，再从数据库刷新内存选项。
+      await option.setItem('webdavVersion', webdavVersion);
+      for (const key of localStorageKeys) {
+        if (key !== 'webdavVersion' && Object.prototype.hasOwnProperty.call(this.cache, key)) {
+          await option.setItem(key, this.cache[key]);
+        }
+      }
+      await option.resetChromeSaveOption();
+      await link.restart(true);
+      note.init();
+      if (db.verno !== databaseVersion) {
+        db.__upgrade(db);
+      }
+      return true;
 
     } catch (error) {
       handleError(error, "DataStores._pull");
+      if (!databaseMayBeChanged) {
+        tools.error(`同步拉取失败，本地数据未改动: ${error.message}`);
+        return false;
+      }
       
       // 如果导入失败且有备份，尝试恢复
       if (backupBlob && backupBlob.size > 0) {
@@ -396,93 +476,150 @@ export default class DataStores {
         tools.error(`同步拉取失败: ${error.message}。无法恢复数据，请检查远端数据是否正常。`);
       }
 
-      // 重置状态（即使恢复失败也要释放锁，避免永久锁定）
-      this.lock = false;
-      this.waitType = '';
+      return false;
+    } finally {
+      this.suppressUpdates = false;
     }
-
   };
 
   toArrayBuffer(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsArrayBuffer(blob);
-    });
+    return blob.arrayBuffer();
   }
 
-  push = () => {
-    // 如果正在执行同步操作，跳过本次推送
+  push = async () => {
+    return this.withProfileLock(() => this.pushLocked());
+  }
+
+  pushLocked = async () => {
+    if (!this.ready || !this.client) return;
     if (this.lock) {
-      console.log('同步操作进行中，跳过本次推送');
+      if (this.waitType === 'push') this.dirtyDuringPush = true;
       return;
     }
-
-    const {
-      webdavVersion
-    } = this.rootStore.option.item;
-
     this.lock = true;
     this.waitType = 'push';
-    this.get_dbData().then((blob) => {
-      // 验证导出的数据不为空
-      if (!blob || blob.size === 0) {
-        throw new Error('导出的数据为空，无法推送');
+    try {
+      // 锁住本页后重新读取两个文件；连接测试时读取的版本不能用于写入判断。
+      const { remote } = await this.readVerifiedRemoteState();
+      const blob = await this.get_dbData();
+      const localData = await blob.text();
+      const localInfo = inspectSnapshot(localData);
+      const localHash = await snapshotFingerprint(localData);
+      const baseline = await this.loadBaseline();
+      if (baseline && localHash === baseline.localHash) return;
+      if (!baseline && remote.data !== null) {
+        throw new Error('没有本机同步基线，须先拉取远端数据');
       }
-
-      // 先写入数据文件
-      this.writeFile(this.dir + devJsonName, blob).then((data) => {
-        // 兼容旧版本版本号可能是字符串的情况
-        let num = parseInt(webdavVersion);
-        if (isNaN(num)) {
-          // 尝试从字符串中提取数字
-          const match = String(webdavVersion).match(/\d+/);
-          if (match) {
-            num = parseInt(match[0]);
-            console.warn('版本号格式异常，已自动修复:', webdavVersion, '->', num);
-          } else {
-            // 如果无法修复，使用时间戳
-            num = new Date().getTime();
-            console.warn('版本号无法修复，使用时间戳:', num);
-          }
-          this.rootStore.option.setItem('webdavVersion', num);
+      if (!baseline && localInfo.isBootstrap) return;
+      if (baseline && remote.data === null) {
+        throw new Error('远端文件已消失，已停止上传');
+      }
+      const remoteHash = remote.data === null ? null : await fileFingerprint(remote.data);
+      const remoteChanged = baseline &&
+        (remote.version !== baseline.version || remoteHash !== baseline.remoteHash);
+      const localBootstrapConflict = localInfo.isBootstrap && remote.info && !remote.info.isBootstrap;
+      if (localInfo.isBootstrap && !localBootstrapConflict) return;
+      if (remoteChanged || localBootstrapConflict) {
+        if (remote.data === null) throw new Error('远端文件已消失，已停止上传');
+        if (remote.info.isBootstrap && !localInfo.isBootstrap) {
+          throw new Error('远端变成初始化数据，已保留本地数据并停止同步');
         }
-        const versionBlob = new Blob([num.toString()], {
-          type: 'text/plain'
+        this.waitType = 'pull';
+        const imported = await this._pull(remote.version, remote.data);
+        if (!imported) {
+          this.ready = false;
+          return;
+        }
+        this.remoteVersion = remote.version;
+        this.remoteData = remote.data;
+        this.remoteEtag = remote.dataEtag;
+        const importedData = await (await this.get_dbData()).text();
+        await this.saveBaseline(remote.version, remote.dataEtag, await snapshotFingerprint(importedData), remoteHash);
+        this.suppressUpdates = true;
+        try {
+          await this.rootStore.option.setItem('webdavDataEtag', remote.dataEtag || '');
+        } finally {
+          this.suppressUpdates = false;
+        }
+        this.dirtyDuringPush = false;
+        this.ready = true;
+        return;
+      }
+      if (remote.data !== null && (!remote.dataEtag || !remote.versionEtag)) {
+        throw new Error('服务器未提供文件 ETag，无法安全地条件写入现有远端数据');
+      }
+      if (remote.data !== null) {
+        canReplaceRemote({
+          expectedVersion: baseline.version,
+          actualVersion: remote.version,
+          expectedData: remote.data,
+          actualData: remote.data,
+          expectedEtag: remote.dataEtag,
+          actualEtag: remote.dataEtag,
+          localInfo,
+          remoteInfo: remote.info
         });
+      }
+      const nextVersion = (remote.version ?? 0) + 1;
+      if (!Number.isSafeInteger(nextVersion)) throw new Error('WebDAV 版本号超出安全范围');
 
-        // 等待版本号文件写入完成后再释放锁
-        // 如果版本号写入失败，需要回滚数据文件（可选，但为了数据一致性）
-        this.writeFile(this.dir + devVName, versionBlob).then(() => {
-          this.lock = false;
-          this.waitType = '';
-          console.log('数据推送成功，版本号:', num);
-        }).catch((error) => {
-          console.error('写入版本号文件失败:', error);
-          // 版本号写入失败，但数据文件已写入，这会导致数据不一致
-          // 尝试删除已写入的数据文件，避免不一致
-          this.client.deleteFile(this.dir + devJsonName).catch(() => {
-            // 删除失败也继续，至少记录错误
-            console.error('无法删除已写入的数据文件，可能导致数据不一致');
-          });
-          this.rootStore.tools.error(`同步版本号错误: ${error.message}。数据文件已写入但版本号未更新，可能导致数据不一致`);
-          this.lock = false;
-          this.waitType = '';
-        });
-      }).catch((error) => {
-        console.error('写入数据文件失败:', error);
-        this.rootStore.tools.error(`同步数据错误: ${error.message}`);
-        this.lock = false;
-        this.waitType = '';
+      // 先保存远端上一版。备份写入失败时，绝不覆盖正式数据。
+      if (remote.data !== null) {
+        await this.writeFile(this.dir + '/jvmao-tab.previous.json',
+          new Blob([remote.data], { type: 'application/json' }));
+      }
+      // 先在上传副本里写下一版本；远端确认成功前不提前改动本地版本。
+      const nextData = withSnapshotVersion(localData, nextVersion);
+      const nextBlob = new Blob([nextData], { type: 'application/json' });
+      await this.writeFile(this.dir + devJsonName, nextBlob, {
+        overwrite: remote.data !== null,
+        headers: remote.dataEtag ? { 'If-Match': remote.dataEtag } : undefined
       });
-
-    }).catch((error) => {
-      console.error('获取数据库数据失败:', error);
-      this.rootStore.tools.error(`获取数据错误: ${error.message}`);
+      try {
+        await this.writeFile(this.dir + devVName,
+          new Blob([String(nextVersion)], { type: 'text/plain' }), {
+            overwrite: remote.version !== null,
+            headers: remote.versionEtag ? { 'If-Match': remote.versionEtag } : undefined
+          });
+      } catch (error) {
+        if (remote.data !== null) {
+          try {
+            const latest = await this.readRemoteState();
+            // 只在正式文件仍是自己刚写入的内容时尝试恢复上一版。
+            if (latest.data === nextData) {
+              await this.writeFile(this.dir + devJsonName,
+                new Blob([remote.data], { type: 'application/json' }), {
+                  headers: latest.dataEtag ? { 'If-Match': latest.dataEtag } : undefined
+                });
+            }
+          } catch (restoreError) {
+            console.error('远端旧数据恢复失败，仍保留 previous 备份:', restoreError);
+          }
+        }
+        throw error;
+      }
+      this.remoteVersion = nextVersion;
+      this.remoteData = nextData;
+      const committed = await this.readRemoteHeader();
+      if (committed.version !== nextVersion) throw new Error('上传后版本号核对失败');
+      this.remoteEtag = committed.dataEtag;
+      this.suppressUpdates = true;
+      await this.rootStore.option.setItem('webdavVersion', nextVersion);
+      await this.rootStore.option.setItem('webdavExpectedRemote', true);
+      await this.saveBaseline(nextVersion, committed.dataEtag, await snapshotFingerprint(nextData), await fileFingerprint(nextData));
+      await this.rootStore.option.setItem('webdavDataEtag', committed.dataEtag || '');
+    } catch (error) {
+      this.ready = false;
+      this.rootStore.tools.error(`WebDAV 上传已停止: ${error.message || '未知错误'}`);
+    } finally {
+      this.suppressUpdates = false;
       this.lock = false;
       this.waitType = '';
-    });
+      if (this.dirtyDuringPush && this.ready) {
+        this.dirtyDuringPush = false;
+        this._update();
+      }
+    }
   }
 
   deleteServeData = () => {
@@ -490,6 +627,7 @@ export default class DataStores {
       option
     } = this.rootStore;
 
+    this.pause();
     option.setItem('webDavURL', '');
     option.setItem('webDavUsername', '');
     option.setItem('webDavPassword', '');
@@ -499,36 +637,18 @@ export default class DataStores {
 
   _update = () => {}
 
+  pause = () => {
+    this._update.cancel?.();
+    this.ready = false;
+    this.client = null;
+    this.connectionKey = '';
+  }
+
   update = () => {
-    const {
-      webDavURL,
-      webdavVersion = 0,
-    } = this.rootStore.option.item;
-
-    if (!webDavURL || this.lock) {
+    if (this.suppressUpdates || !this.rootStore.option.item.webDavURL || !this.ready) return;
+    if (this.lock) {
+      if (this.waitType === 'push') this.dirtyDuringPush = true;
       return;
-    }
-
-    // 验证版本号是否有效
-    const currentVersion = parseInt(webdavVersion);
-    if (isNaN(currentVersion)) {
-      console.error('当前版本号无效，重置为时间戳:', webdavVersion);
-      const newVersion = new Date().getTime();
-      this.rootStore.option.setItem('webdavVersion', newVersion);
-      this.waitType = 'push';
-      this._update();
-      return;
-    }
-
-    this.waitType = 'push';
-
-    // 安全地增加版本号
-    const newVersion = currentVersion + 1;
-    if (isNaN(newVersion) || newVersion <= currentVersion) {
-      console.error('版本号计算错误，使用时间戳:', currentVersion, newVersion);
-      this.rootStore.option.setItem('webdavVersion', new Date().getTime());
-    } else {
-      this.rootStore.option.setItem('webdavVersion', newVersion);
     }
     this._update();
   }
@@ -567,6 +687,12 @@ export default class DataStores {
                       key,
                   }
                 }
+
+                case 'webdavDataEtag': {
+                  const localOnlyValue = _.cloneDeep(value);
+                  localOnlyValue.value = '';
+                  return { value: localOnlyValue, key };
+                }
               }
             }
             return {
@@ -603,23 +729,11 @@ export default class DataStores {
   };
 
   // 写入文件内容
-  writeFile = (filePath, blob) => {
-    return new Promise((resolve, reject) => {
-      try {
-        this.toArrayBuffer(blob).then((blob) => {
-          this.client.putFileContents(filePath, blob, {
-            overwrite: true
-          }).then((content) => {
-            resolve(content);
-          }).catch((error) => {
-            reject(error);
-          })
-        });
-      } catch (error) {
-        handleError(error, "DataStores.writeFile");
-        reject(error);
-      }
-    });
+  writeFile = async (filePath, blob, options = {}) => {
+    const content = await this.toArrayBuffer(blob);
+    const written = await this.client.putFileContents(filePath, content, { overwrite: true, ...options });
+    if (written === false) throw new Error('远端文件已存在，条件写入失败');
+    return written;
   };
 
   listDirectory = (path) => {

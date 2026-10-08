@@ -7,6 +7,9 @@ import { db } from "~/db";
 import { IconFileArrowLeft } from "@tabler/icons-react";
 import { ExclamationCircleFilled } from "@ant-design/icons";
 import _ from "lodash";
+import dayjs from 'dayjs';
+import { downloadBlob } from '~/utils';
+import { listWebdavLocalBackups } from '~/stores/webdavLocalBackup';
 
 import useStores from "~/hooks/useStores";
 
@@ -40,6 +43,17 @@ const PreferencesData = () => {
     const { option, tools, link, note, data } = useStores();
     // const _option = _.cloneDeep(option.item);
     const [spinning, setSpinning] = React.useState(false);
+    const [backupOpen, setBackupOpen] = React.useState(false);
+    const [localBackups, setLocalBackups] = React.useState([]);
+
+    const openLocalBackups = async () => {
+        try {
+            setLocalBackups(await listWebdavLocalBackups());
+            setBackupOpen(true);
+        } catch (error) {
+            tools.error(`读取本地同步备份失败: ${error.message}`);
+        }
+    };
 
     const progressCallback = React.useCallback((props) => {
         if (props) {
@@ -173,6 +187,23 @@ const PreferencesData = () => {
                 </Button>
                 <Info>导出数据中不会包含已上传的壁纸</Info>
             </Form.Item>
+            <Form.Item>
+                <Button block onClick={openLocalBackups}>查看本地同步备份</Button>
+                <Info>WebDAV 拉取前自动保留最近 3 份有内容的本地数据</Info>
+            </Form.Item>
+            <Modal title="本地同步备份" open={backupOpen} footer={null}
+                onCancel={() => setBackupOpen(false)}>
+                {localBackups.length === 0 ? <Info>暂无本地同步备份</Info> :
+                    localBackups.map((backup) => (
+                        <div key={backup.id} style={{ display: 'flex', alignItems: 'center',
+                            justifyContent: 'space-between', marginBottom: 12 }}>
+                            <span>{dayjs(backup.createdAt).format('YYYY-MM-DD HH:mm:ss')}
+                                {' · '}{(backup.blob.size / 1024).toFixed(1)} KB</span>
+                            <Button onClick={() => downloadBlob(backup.blob,
+                                `jvmao-local-backup-${backup.createdAt}.json`)}>导出</Button>
+                        </div>
+                    ))}
+            </Modal>
             <Spin spinning={spinning} fullscreen />
         </Form>
     );

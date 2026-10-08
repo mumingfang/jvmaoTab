@@ -295,7 +295,7 @@ export default class LinkStore extends BaseStore {
   }
 
 
-  init() {
+  init(skipDefaultSeed = false) {
     this.rootStore.option.getHomeId().then((homeId) => {
       if (!homeId) {
         console.error("未获取到homeId");
@@ -305,6 +305,8 @@ export default class LinkStore extends BaseStore {
         .count()
         .then((res) => {
           if (!res) {
+            // WebDAV 恢复期间由远端决定内容，不能先写入默认链接和便签。
+            if (skipDefaultSeed || this.rootStore.option.isRestoringWebDAV) return;
             this.rootStore.note._init();
             setTimeout(() => {
               const timeKey = getID();
@@ -388,16 +390,16 @@ export default class LinkStore extends BaseStore {
     });
   }
 
-  async restart() {
+  async restart(skipOptionInit = false) {
     if (!db.isOpen()) {
       await db.open();
     }
     if (this.isInit) {
       this.getNav(true);
     } else {
-      this.init();
+      this.init(skipOptionInit);
     }
-    this.rootStore.option.init();
+    if (!skipOptionInit) this.rootStore.option.init();
   }
 
   // 获取待添加网址列表

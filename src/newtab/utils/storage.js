@@ -17,6 +17,17 @@ class Storage {
     });
   }
 
+  async replace(key, value) {
+    return this.db.transaction('rw', this.db.cache, async () => {
+      const current = await this.db.cache.get({ key });
+      return this.db.cache.put({
+        ...(current ? { id: current.id } : {}),
+        key,
+        ...value
+      });
+    });
+  }
+
   async get(key) {
     return (await this.db.cache.get({
       key

@@ -255,7 +255,7 @@ const FirstScreen = (props) => {
   const { home, tools, note, option, link } = useStores();
   const { isSoBarDown, homeLinkTimeKey, bgColor, bgType, showHomeClock, homeLinkMaxNum = 14, soHdCenter, bgImageFit = 'cover', bg2ImageFit = 'cover', homeGlassEffect } = option.item;
   
-  // 直接使用 bgUrl（HomeStores 会自动处理渐进式加载：先缩略图后大图）
+  // HomeStores 只在图片可显示后更新 URL，加载新图时沿用旧图。
   const bg1DisplayUrl = home.bgUrl || home.bgThumbnailUrl || null;
   
   // 智能判断实际的展示方式（初始值：如果是 auto 则先用 cover，待图片加载后更新）
@@ -366,14 +366,6 @@ const FirstScreen = (props) => {
       home.onLoadBg();
     }
   }, [home]);
-
-  // 监听首次加载状态，显示初始化提示
-  React.useEffect(() => {
-    if (bgType === 'bing' && home.isFirstLoad && home.isLoadingWallpaper) {
-      // 提示已经在 getBingBg() 中通过 messageApi 显示
-      // 这里可以添加额外的UI提示如果需要
-    }
-  }, [bgType, home.isFirstLoad, home.isLoadingWallpaper]);
 
   useUpdateEffect(() => {
     if (unlock) {
