@@ -249,18 +249,125 @@ test('短暂读到旧 GET 内容时重新读取并继续拉取', async () => {
   assert.deepEqual(state.errors, []);
 });
 
-test('数据文件 4479 但版本文件 4478 时停止拉取和上传', async () => {
+test('数据文件 4479 但版本文件 4478 稳定时等待选择，使用远端后可上传', async () => {
   const state = setup(snapshot('saved'), snapshot('changed', false, 4479), 4478);
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  try {
+    await state.store.pull();
+    assert.equal(state.store.syncConflict.remoteVersion, 4478);
+    assert.equal(state.store.syncConflict.snapshotVersion, 4479);
+    assert.equal(state.requests.includes('import'), false);
+    assert.equal(state.requests.some((request) => request.startsWith('PUT ')), false);
+    await state.store.resolveConflict('remote');
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(state.getLocal(), snapshot('changed', false, 4479));
+  assert.equal(state.store.syncConflict, null);
+  assert.equal(state.requests.some((request) => request.startsWith('PUT ')), false);
+  assert.deepEqual(state.errors, []);
+
+  state.changeLocal(snapshot('new edit', false, 4479));
+  await state.store.push();
+  assert.equal(state.getRemote(), snapshot('new edit', false, 4480));
+  assert.equal(state.getVersion(), 4480);
+  assert.deepEqual(state.errors, []);
+});
+
+test('选择本地时先另存远端，再从较高版本上传', async () => {
+  const state = setup(snapshot('local edit', false, 4478), snapshot('remote edit', false, 4479), 4478);
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  try {
+    await state.store.pull();
+    await state.store.resolveConflict('local');
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.ok(state.requests.some((request) => request.includes('jvmao-tab.conflict-')));
+  assert.equal(state.requests.includes('import'), false);
+  assert.equal(state.getRemote(), snapshot('local edit', false, 4480));
+  assert.equal(state.getVersion(), 4480);
+  assert.equal(state.store.syncConflict, null);
+  assert.deepEqual(state.errors, []);
+});
+
+test('弹窗等待期间远端发生变化时要求重新选择，不上传', async () => {
+  const state = setup(snapshot('local edit', false, 4478), snapshot('remote edit', false, 4479), 4478);
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  try {
+    await state.store.pull();
+    const oldId = state.store.syncConflict.id;
+    state.changeRemote(snapshot('new remote', false, 4479), 4478);
+    await state.store.resolveConflict('local');
+    assert.notEqual(state.store.syncConflict.id, oldId);
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(state.requests.some((request) => request.startsWith('PUT ')), false);
+  assert.equal(state.getRemote(), snapshot('new remote', false, 4479));
+});
+
+test('冲突备份失败时不覆盖远端', async () => {
+  const state = setup(snapshot('local edit', false, 4478), snapshot('remote edit', false, 4479), 4478);
+  const originalWrite = state.store.writeFile;
+  state.store.writeFile = async (path, ...args) => {
+    if (path.includes('jvmao-tab.conflict-')) throw new Error('backup failed');
+    return originalWrite(path, ...args);
+  };
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  try {
+    await state.store.pull();
+    await state.store.resolveConflict('local');
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(state.getRemote(), snapshot('remote edit', false, 4479));
+  assert.equal(state.getVersion(), 4478);
+  assert.match(state.errors.at(-1), /backup failed/);
+});
+
+
+test('版本号相差一但下载内容持续变化时不导入', async () => {
+  const state = setup(snapshot('saved'), snapshot('first', false, 4479), 4478);
+  const originalRead = state.store.readRemoteState;
+  let reads = 0;
+  state.store.readRemoteState = async () => {
+    const remote = await originalRead();
+    const data = snapshot(['first', 'other', 'third'][reads++], false, 4479);
+    return { ...remote, data, info: safety.inspectSnapshot(data) };
+  };
   const originalError = console.error;
-  let diagnostic;
-  console.error = (_tag, details) => { diagnostic = details; };
+  console.error = () => {};
   try {
     await state.store.pull();
   } finally {
     console.error = originalError;
   }
-  assert.deepEqual(diagnostic.attempts[0].reason, ['embedded-version']);
   assert.equal(state.requests.includes('import'), false);
   assert.equal(state.requests.some((request) => request.startsWith('PUT ')), false);
   assert.match(state.errors.at(-1), /持续不一致/);
+});
+
+
+test('弹窗期间版本冲突消失时，旧选择不会执行', async () => {
+  const state = setup(snapshot('local edit', false, 4478), snapshot('remote edit', false, 4479), 4478);
+  const originalWarn = console.warn;
+  console.warn = () => {};
+  try {
+    await state.store.pull();
+    state.changeRemote(snapshot('new remote', false, 4479), 4479);
+    await state.store.resolveConflict('local');
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.equal(state.requests.some((request) => request.startsWith('PUT ')), false);
+  assert.equal(state.requests.includes('import'), false);
+  assert.match(state.errors.at(-1), /重新检查/);
+  await state.store.resolveConflict('retry');
+  assert.equal(state.getLocal(), snapshot('new remote', false, 4479));
+  assert.equal(state.store.syncConflict, null);
 });

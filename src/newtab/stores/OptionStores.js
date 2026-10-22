@@ -9,6 +9,7 @@ import {
   db
 } from "~/db";
 import _ from "lodash";
+import { DEFAULT_HIDDEN_SHORTCUT } from "~/utils/hiddenShortcut";
 import {
   getID
 } from "~/utils";
@@ -35,7 +36,7 @@ const updateOptions = {
     bg2Base64: "",
     linkSpan: 4,
     copyClose: false,
-    pwKey: ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowLeft', 'ArrowRight', 'ArrowRight', 'b', 'a', 'b', 'a'],
+    pwKey: DEFAULT_HIDDEN_SHORTCUT,
     defaultOpenAdd: false,
   },
   3: {

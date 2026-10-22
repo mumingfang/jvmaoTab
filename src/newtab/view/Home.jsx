@@ -19,6 +19,7 @@ import { motion } from "framer-motion";
 import FirstScreen from '~/scenes/home/FirstScreen';
 import Nav from '~/scenes/home/Nav';
 import TabList from '~/scenes/Link/TabList';
+import { advanceHiddenShortcut, normalizeHiddenShortcut, shouldIgnoreHiddenShortcutEvent } from "~/utils/hiddenShortcut";
 
 export const headerHeight = 70;
 const navWidth = 240;
@@ -93,6 +94,7 @@ const Home = (props) => {
 
   const state = React.useRef({
     pwKeyNum: 0,
+    pwKeyLastAt: 0,
   }).current;
 
   // 兜底：Main 用 translateY(100vh) 藏在屏幕下方，会撑出可滚动区域，
@@ -103,6 +105,12 @@ const Home = (props) => {
     if (v.unlock) {
       setTimeout(() => {
         v.unlock = false;
+        if (option.showHide) {
+          option.showHide = false;
+          const activeNav = link.linkNav.find((item) => item.timeKey === link.activeId);
+          const refreshNav = activeNav?.hide ? link.getNav() : link.updateNav();
+          refreshNav.catch(console.error);
+        }
         tools.tabListDrawer = false;
         v.scrollTopNum = 0;
         setTimeout(() => {
@@ -114,25 +122,28 @@ const Home = (props) => {
     }
   }, [v.unlock]);
 
+  React.useEffect(() => {
+    state.pwKeyNum = 0;
+    state.pwKeyLastAt = 0;
+  }, [pwKey, state]);
+
   useKeyPress(
     (event) => true,
     (event) => {
-      if (!v.unlock && pwKey?.length) {
-        if (pwKey[state.pwKeyNum] === event.key) {
-          if (state.pwKeyNum === pwKey.length - 1) {
-            option.showHide = true;
-            tools.messageApi.success("叮");
-            link.updateNav();
-          } else {
-            state.pwKeyNum++;
-
-          }
-        } else {
-          state.pwKeyNum = 0;
+      if (!v.unlock && !option.showHide && !tools.preferencesOpen && !shouldIgnoreHiddenShortcutEvent(event)) {
+        const shortcut = normalizeHiddenShortcut(pwKey);
+        if (Date.now() - state.pwKeyLastAt > 5000) state.pwKeyNum = 0;
+        const result = advanceHiddenShortcut(shortcut, state.pwKeyNum, event.key);
+        state.pwKeyNum = result.index;
+        state.pwKeyLastAt = Date.now();
+        if (result.matched) {
+          option.showHide = true;
+          tools.messageApi.success("暗格已显示");
+          link.updateNav().catch(console.error);
         }
       }
 
-      if (v.unlock && event.key === "Escape") {
+      if (v.unlock && event.key === "Escape" && !tools.preferencesOpen) {
         handleUnlock();
       }
     },

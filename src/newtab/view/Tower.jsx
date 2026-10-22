@@ -4,6 +4,7 @@ import { message, ConfigProvider, theme } from "antd";
 import useStores from "~/hooks/useStores";
 import { useDocumentVisibility } from 'ahooks';
 import PublicModal from "~/scenes/Public/PublicModal";
+import WebdavConflictModal from "~/scenes/public/WebdavConflictModal";
 import styled, { createGlobalStyle } from "styled-components";
 import { IconCloudUpload, IconCloudDownload } from "@tabler/icons-react";
 import { saveFavicon } from "~/db";
@@ -352,6 +353,7 @@ const Tower = ({ children }) => {
         <RightClick />
         <Preferences />
         <PublicModal />
+        <WebdavConflictModal />
         {data.waitType ? (
           <CloudWrap>
             {data.waitType === 'pull' ? <IconCloudDownload size={18} stroke={0.8} /> : <IconCloudUpload size={18} stroke={0.8} />}

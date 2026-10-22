@@ -37,10 +37,14 @@ export default class DataStores {
   suppressUpdates = false;
   connectionKey = '';
   baseline = null;
+  syncConflict = null;
+  conflictChoice = null;
+  forceLocalConflict = null;
 
   constructor(rootStore) {
     makeObservable(this, {
       waitType: observable,
+      syncConflict: observable,
       test: action,
       init: action,
       pull: action,
@@ -116,6 +120,7 @@ export default class DataStores {
   readVerifiedRemoteState = async (initialHeader) => {
     let before = initialHeader || await this.readRemoteHeader();
     const attempts = [];
+    let stableVersionMismatch = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const remote = await this.readRemoteState();
       const after = await this.readRemoteHeader();
@@ -130,6 +135,31 @@ export default class DataStores {
         (after.dataSize != null && after.dataSize !== downloadedSize);
       if (!versionMismatch && !embeddedVersionMismatch && !etagMismatch && !sizeMismatch) {
         return { header: after, remote };
+      }
+      // A two-file upload can leave a valid JSON snapshot ahead of its version
+      // marker. Accept it only after three identical full downloads.
+      const stableHeaders = before.versionEtag === after.versionEtag &&
+        before.dataEtag === after.dataEtag && before.dataSize === after.dataSize;
+      if (remote.embeddedVersion === remote.version + 1 && stableHeaders &&
+          !versionMismatch && !etagMismatch && !sizeMismatch) {
+        const sameSnapshot = stableVersionMismatch &&
+          stableVersionMismatch.remote.data === remote.data &&
+          stableVersionMismatch.remote.version === remote.version &&
+          stableVersionMismatch.remote.embeddedVersion === remote.embeddedVersion &&
+          stableVersionMismatch.header.dataEtag === after.dataEtag &&
+          stableVersionMismatch.header.dataSize === after.dataSize &&
+          stableVersionMismatch.header.versionEtag === after.versionEtag;
+        stableVersionMismatch = sameSnapshot
+          ? { count: stableVersionMismatch.count + 1, header: after, remote }
+          : { count: 1, header: after, remote };
+        if (stableVersionMismatch.count === 3) {
+          console.warn('[WebDAV 同步] 远端 JSON 版本与版本文件稳定不一致，等待用户选择', {
+            markerVersion: remote.version, snapshotVersion: remote.embeddedVersion
+          });
+          return { header: after, remote, versionConflict: true };
+        }
+      } else {
+        stableVersionMismatch = null;
       }
       attempts.push({
         reason: [versionMismatch && 'version', embeddedVersionMismatch && 'embedded-version',
@@ -189,6 +219,14 @@ export default class DataStores {
     return operation();
   }
 
+  resolveConflict = async (choice) => {
+    if (!this.syncConflict || !['remote', 'local', 'retry'].includes(choice)) return;
+    this.conflictChoice = choice === 'retry' ? null : {
+      choice, id: this.syncConflict.id, localHash: this.syncConflict.localHash
+    };
+    await this.pull();
+  }
+
   pull = async () => {
     const pushLocal = await this.withProfileLock(() => this.pullLocked());
     if (pushLocal && this.ready) await this.push();
@@ -228,8 +266,32 @@ export default class DataStores {
       if (verified) header = verified.header;
       const remote = verified?.remote || null;
       const remoteHash = remote ? await fileFingerprint(remote.data) : baseline.remoteHash;
+      const conflictId = verified?.versionConflict
+        ? `${remote.version}:${remote.embeddedVersion}:${remoteHash}` : null;
+      const choice = this.conflictChoice;
+      this.conflictChoice = null;
+      if (choice && !conflictId) {
+        this.rootStore.tools.error('远端在选择期间已变化，请先重新检查');
+        return;
+      }
+      if (conflictId && (!choice || choice.id !== conflictId || choice.localHash !== localHash)) {
+        this.syncConflict = {
+          id: conflictId, localHash, localVersion, localLinks: localInfo.links,
+          localNotes: localInfo.notes, localIsBootstrap: localInfo.isBootstrap,
+          remoteVersion: remote.version, snapshotVersion: remote.embeddedVersion,
+          remoteLinks: remote.info.links, remoteNotes: remote.info.notes,
+          remoteSize: new Blob([remote.data]).size
+        };
+        return;
+      }
+      if (conflictId && choice.choice === 'local') {
+        if (localInfo.isBootstrap) throw new Error('本地是初始化数据，不能覆盖远端数据');
+        this.forceLocalConflict = conflictId;
+        this.ready = true;
+        return true;
+      }
       const remoteChanged = !baseline || header.version !== baseline.version || remoteHash !== baseline.remoteHash;
-      const decision = decideSync({
+      const decision = conflictId && choice.choice === 'remote' ? 'pull' : decideSync({
         hasBaseline: !!baseline, remoteChanged,
         localChanged: !!baseline && localHash !== baseline.localHash, remoteExists: true
       });
@@ -262,6 +324,7 @@ export default class DataStores {
         }
       }
       this.ready = true;
+      this.syncConflict = null;
       pushLocal = decision === 'push';
     } catch (error) {
       this.rootStore.tools.error(`同步拉取异常: ${error.message || '未知错误'}`);
@@ -406,7 +469,8 @@ export default class DataStores {
       }
 
       // 等待版本号及本地专用选项真正落盘，再从数据库刷新内存选项。
-      await option.setItem('webdavVersion', webdavVersion);
+      const embeddedVersion = inspectSnapshot(data).embeddedVersion;
+      await option.setItem('webdavVersion', Math.max(webdavVersion, embeddedVersion ?? webdavVersion));
       for (const key of localStorageKeys) {
         if (key !== 'webdavVersion' && Object.prototype.hasOwnProperty.call(this.cache, key)) {
           await option.setItem(key, this.cache[key]);
@@ -498,16 +562,25 @@ export default class DataStores {
     }
     this.lock = true;
     this.waitType = 'push';
+    const forceConflictId = this.forceLocalConflict;
+    this.forceLocalConflict = null;
     try {
       // 锁住本页后重新读取两个文件；连接测试时读取的版本不能用于写入判断。
       const { remote } = await this.readVerifiedRemoteState();
+      if (forceConflictId) {
+        const currentHash = await fileFingerprint(remote.data);
+        const currentId = `${remote.version}:${remote.embeddedVersion}:${currentHash}`;
+        if (currentId !== forceConflictId) {
+          throw new Error('远端数据已变化，请重新检查并选择');
+        }
+      }
       const blob = await this.get_dbData();
       const localData = await blob.text();
       const localInfo = inspectSnapshot(localData);
       const localHash = await snapshotFingerprint(localData);
       const baseline = await this.loadBaseline();
-      if (baseline && localHash === baseline.localHash) return;
-      if (!baseline && remote.data !== null) {
+      if (baseline && localHash === baseline.localHash && !forceConflictId) return;
+      if (!baseline && remote.data !== null && !forceConflictId) {
         throw new Error('没有本机同步基线，须先拉取远端数据');
       }
       if (!baseline && localInfo.isBootstrap) return;
@@ -518,8 +591,11 @@ export default class DataStores {
       const remoteChanged = baseline &&
         (remote.version !== baseline.version || remoteHash !== baseline.remoteHash);
       const localBootstrapConflict = localInfo.isBootstrap && remote.info && !remote.info.isBootstrap;
+      if (forceConflictId && localInfo.isBootstrap) {
+        throw new Error('本地是初始化数据，不能覆盖远端数据');
+      }
       if (localInfo.isBootstrap && !localBootstrapConflict) return;
-      if (remoteChanged || localBootstrapConflict) {
+      if (!forceConflictId && (remoteChanged || localBootstrapConflict)) {
         if (remote.data === null) throw new Error('远端文件已消失，已停止上传');
         if (remote.info.isBootstrap && !localInfo.isBootstrap) {
           throw new Error('远端变成初始化数据，已保留本地数据并停止同步');
@@ -550,7 +626,7 @@ export default class DataStores {
       }
       if (remote.data !== null) {
         canReplaceRemote({
-          expectedVersion: baseline.version,
+          expectedVersion: forceConflictId ? remote.version : baseline.version,
           actualVersion: remote.version,
           expectedData: remote.data,
           actualData: remote.data,
@@ -560,9 +636,14 @@ export default class DataStores {
           remoteInfo: remote.info
         });
       }
-      const nextVersion = (remote.version ?? 0) + 1;
+      const nextVersion = Math.max(remote.version ?? 0, remote.embeddedVersion ?? 0) + 1;
       if (!Number.isSafeInteger(nextVersion)) throw new Error('WebDAV 版本号超出安全范围');
 
+      // The user's local choice must leave a separate, durable remote copy.
+      if (forceConflictId) {
+        await this.writeFile(this.dir + `/jvmao-tab.conflict-${Date.now()}-v${remote.version}.json`,
+          new Blob([remote.data], { type: 'application/json' }), { overwrite: false });
+      }
       // 先保存远端上一版。备份写入失败时，绝不覆盖正式数据。
       if (remote.data !== null) {
         await this.writeFile(this.dir + '/jvmao-tab.previous.json',
@@ -608,6 +689,7 @@ export default class DataStores {
       await this.rootStore.option.setItem('webdavExpectedRemote', true);
       await this.saveBaseline(nextVersion, committed.dataEtag, await snapshotFingerprint(nextData), await fileFingerprint(nextData));
       await this.rootStore.option.setItem('webdavDataEtag', committed.dataEtag || '');
+      this.syncConflict = null;
     } catch (error) {
       this.ready = false;
       this.rootStore.tools.error(`WebDAV 上传已停止: ${error.message || '未知错误'}`);

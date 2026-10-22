@@ -1,12 +1,13 @@
 import React from "react";
 import { observer } from "mobx-react";
-import { Form, Checkbox, Select, Divider, Button, Modal } from "antd";
+import { Form, Checkbox, Select, Divider, Button, Modal, Input, Space, Typography } from "antd";
 import { ExclamationCircleOutlined } from "@ant-design/icons";
 import useStores from "~/hooks/useStores";
 import UploadImg from "~/components/UploadImg";
 import { db } from "~/db";
 import { refreshFaviconForUrl } from "~/utils/favicon";
 import _ from "lodash";
+import { DEFAULT_HIDDEN_SHORTCUT, MAX_HIDDEN_SHORTCUT_LENGTH, normalizeHiddenShortcut, normalizeShortcutKey } from "~/utils/hiddenShortcut";
 
 const options = [
     {
@@ -48,6 +49,97 @@ const homeLinkMaxNumOption = [
 const PreferencesLink = () => {
     const { option, tools } = useStores();
     const _option = _.cloneDeep(option.item);
+    const [verifiedShortcut, setVerifiedShortcut] = React.useState(false);
+    const [enteredKeyCount, setEnteredKeyCount] = React.useState(0);
+    const verifyBuffer = React.useRef([]);
+    const verifyInput = React.useRef(null);
+    const [recording, setRecording] = React.useState(false);
+    const [draftShortcut, setDraftShortcut] = React.useState([]);
+    const [savingShortcut, setSavingShortcut] = React.useState(false);
+    const shortcutInput = React.useRef(null);
+    const currentShortcut = normalizeHiddenShortcut(option.item.pwKey);
+    const formatShortcut = (keys) => keys.map((key) => ({ ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←", ArrowRight: "→" })[key] || key.toUpperCase()).join(" → ");
+
+    React.useEffect(() => {
+        setVerifiedShortcut(false);
+        setEnteredKeyCount(0);
+        verifyBuffer.current = [];
+    }, [option.item.pwKey]);
+
+    const verifyShortcutKey = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.key === "Backspace" || event.key === "Escape") {
+            verifyBuffer.current = event.key === "Escape" ? [] : verifyBuffer.current.slice(0, -1);
+            setEnteredKeyCount(verifyBuffer.current.length);
+            return;
+        }
+        if (event.isComposing || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+        const key = normalizeShortcutKey(event.key);
+        if (!key) return;
+        verifyBuffer.current = [...verifyBuffer.current, key];
+        if (verifyBuffer.current.length === currentShortcut.length) {
+            const isCorrect = verifyBuffer.current.every((item, index) => item === currentShortcut[index]);
+            verifyBuffer.current = [];
+            setEnteredKeyCount(0);
+            if (isCorrect) {
+                setVerifiedShortcut(true);
+                tools.messageApi?.success("验证通过，可以修改暗格按键");
+            } else {
+                tools.messageApi?.error("按键顺序不正确，请重新输入");
+                verifyInput.current?.focus();
+            }
+        } else {
+            setEnteredKeyCount(verifyBuffer.current.length);
+        }
+    };
+
+    const startShortcutRecording = () => {
+        setDraftShortcut([]);
+        setRecording(true);
+        setTimeout(() => shortcutInput.current?.focus(), 0);
+    };
+
+    const recordShortcutKey = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.key === "Escape") {
+            setRecording(false);
+            return;
+        }
+        if (event.key === "Backspace") {
+            setDraftShortcut((keys) => keys.slice(0, -1));
+            return;
+        }
+        if (event.isComposing || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+        const key = normalizeShortcutKey(event.key);
+        if (key) setDraftShortcut((keys) => keys.length < MAX_HIDDEN_SHORTCUT_LENGTH ? [...keys, key] : keys);
+    };
+
+    const saveShortcut = async (keys) => {
+        setSavingShortcut(true);
+        try {
+            await option.setItem("pwKey", keys);
+            setRecording(false);
+            setDraftShortcut([]);
+            setVerifiedShortcut(false);
+            tools.messageApi?.success("暗格按键已保存；请记住新的按键顺序");
+        } catch (error) {
+            console.error("保存暗格按键失败", error);
+            tools.messageApi?.error("保存失败，请重试");
+        } finally {
+            setSavingShortcut(false);
+        }
+    };
+    const confirmShortcutSave = (keys) => {
+        Modal.confirm({
+            title: "确认保存暗格按键？",
+            content: "保存后，设置中不会显示这串按键。请先记住或妥善记录；忘记后无法在这里修改或恢复默认。暗格仅隐藏界面，不加密数据。",
+            okText: "已记住，保存",
+            cancelText: "返回检查",
+            onOk: () => saveShortcut(keys),
+        });
+    };
     const { linkSpan, copyClose, defaultOpenAdd, defauiltLink, linkOpenSelf, showLinkNav, homeLinkMaxNum, rollingBack } = _option;
 
     const handleChange = (value) => {
@@ -251,6 +343,56 @@ const PreferencesLink = () => {
             <Form.Item name='rollingBack' valuePropName="checked" style={{ marginBottom: 5 }}>
                 <Checkbox >支持滚动返回首屏</Checkbox>
             </Form.Item>
+            <Divider />
+            <div style={{ marginBottom: 20 }}>
+                <Typography.Text strong>暗格唤出按键</Typography.Text>
+                <Typography.Paragraph type="secondary" style={{ margin: "8px 0 10px" }}>
+                    暗格只在界面隐藏，数据仍可通过导出、WebDAV 和浏览器存储访问，不能用来保护隐私。返回首屏时暗格会重新隐藏。
+                </Typography.Paragraph>
+                {!verifiedShortcut ? (
+                    <>
+                        <Typography.Paragraph style={{ marginBottom: 8 }}>先依次输入现有按键，验证后才能修改或恢复默认。</Typography.Paragraph>
+                        <Input
+                            ref={verifyInput}
+                            readOnly
+                            value={"●".repeat(enteredKeyCount)}
+                            placeholder="输入现有暗格按键顺序"
+                            onKeyDown={verifyShortcutKey}
+                            aria-label="输入现有暗格按键顺序以解锁设置"
+                        />
+                        <Typography.Paragraph type="secondary" style={{ margin: "6px 0 0" }}>
+                            支持字母、数字和方向键；退格删除，Esc 清空。忘记按键后，此处无法修改或恢复默认。
+                        </Typography.Paragraph>
+                    </>
+                ) : recording ? (
+                    <>
+                        <Typography.Paragraph style={{ marginBottom: 8 }}>验证通过。请录制新的按键顺序：</Typography.Paragraph>
+                        <Input
+                            ref={shortcutInput}
+                            readOnly
+                            value={formatShortcut(draftShortcut)}
+                            placeholder="依次按键，支持字母、数字和方向键"
+                            onKeyDown={recordShortcutKey}
+                            aria-label="录制新的暗格按键顺序"
+                        />
+                        <Typography.Paragraph type="secondary" style={{ margin: "6px 0 10px" }}>
+                            录制 2～16 个键；退格删除上一个，Esc 取消。保存前请记住，新按键保存后无法在设置中查看。
+                        </Typography.Paragraph>
+                        <Space>
+                            <Button type="primary" disabled={draftShortcut.length < 2} loading={savingShortcut} onClick={() => confirmShortcutSave(draftShortcut)}>保存按键</Button>
+                            <Button onClick={() => setRecording(false)}>取消</Button>
+                        </Space>
+                    </>
+                ) : (
+                    <>
+                        <Typography.Paragraph style={{ marginBottom: 8 }}>验证通过。当前按键不会显示；保存新按键后需重新验证。</Typography.Paragraph>
+                        <Space>
+                            <Button onClick={startShortcutRecording}>录制新按键</Button>
+                            <Button disabled={savingShortcut || JSON.stringify(currentShortcut) === JSON.stringify(DEFAULT_HIDDEN_SHORTCUT)} onClick={() => confirmShortcutSave([...DEFAULT_HIDDEN_SHORTCUT])}>恢复默认</Button>
+                        </Space>
+                    </>
+                )}
+            </div>
             <Divider />
             <Form.Item>
                 <Button 
